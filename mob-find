@@ -19,6 +19,9 @@ sys.path.insert(0, SCRIPT_DIR)
 
 
 def load_elements(json_path):
+    if not os.path.exists(json_path):
+        print(f"ERROR: {json_path} not found. Run mob-annotate first.", file=sys.stderr)
+        sys.exit(1)
     with open(json_path) as f:
         return json.load(f)
 
