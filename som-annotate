@@ -108,7 +108,7 @@ def get_screen_size():
     system = platform.system()
     if system == "Darwin":
         out = subprocess.check_output([
-            "python3", "-c",
+            sys.executable, "-c",
             "import AppKit; s=AppKit.NSScreen.mainScreen().frame().size; print(int(s.width), int(s.height))"
         ]).decode().strip().split()
         # AppKit frame().size returns LOGICAL pixels — correct for mouse coords
