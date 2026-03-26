@@ -8,7 +8,7 @@
 
 | 工具 | 作用 | 示例 |
 |------|------|------|
-| `som-annotate` | 截图+标注所有可交互元素 | `som-annotate -o page.png -j page.json -q --wait 2` |
+| `som-annotate` | 截图+标注所有可交互元素 | `som-annotate -o page.jpg -j page.json -q --wait 2` |
 | `som-find` | 按关键词搜索元素 | `som-find "Buy" --first --cmd -j page.json` |
 | `som-find --summary` | 页面概览 | `som-find --summary -j page.json` |
 | `som-find --extract` | 提取价格/运费/SKU | `som-find --extract -j page.json` |
@@ -94,7 +94,7 @@ som-find --extract -j scrolled.json
 你可以纯文本操作，不依赖多模态能力：
 
 ```bash
-som-annotate -o page.png -j page.json -q --wait 2   # 标注
+som-annotate -o page.jpg -j page.json -q --wait 2   # 标注
 som-find --summary -j page.json                       # 看页面有什么
 som-find "Buy" --first --cmd -j page.json            # 找按钮 → 输出 som-click 命令
 som-click 29 -j page.json                             # 执行点击

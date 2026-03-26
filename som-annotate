@@ -40,15 +40,25 @@ def find_omniparser():
 OMNI_DIR = find_omniparser()
 
 # ─── 截图 ───────────────────────────────────────────────
-def take_screenshot(output_path):
-    """Take a fresh screenshot. Deletes existing file first to avoid stale data."""
+def take_screenshot(output_path, max_width=1920):
+    """Take a screenshot, auto-resize and compress for efficiency.
+
+    HiDPI screens (e.g. 2880x1800) produce huge PNGs. This function:
+    1. Captures the raw screenshot
+    2. Resizes to max_width (default 1920) if larger
+    3. Saves as JPEG q85 if output ends in .jpg/.jpeg, otherwise PNG
+    """
+    from PIL import Image as PILImg
+
     # Remove existing file to guarantee freshness
     if os.path.exists(output_path):
         os.remove(output_path)
 
+    raw_path = output_path + ".raw.png"
+
     system = platform.system()
     if system == "Darwin":
-        subprocess.run(["screencapture", "-x", output_path], check=True)
+        subprocess.run(["screencapture", "-x", raw_path], check=True)
     elif system == "Linux":
         display = os.environ.get("DISPLAY")
         if not display:
@@ -61,20 +71,45 @@ def take_screenshot(output_path):
                     break
                 except (subprocess.CalledProcessError, FileNotFoundError):
                     continue
-        subprocess.run(["scrot", output_path], check=True)
+        subprocess.run(["scrot", raw_path], check=True)
 
-    # Verify screenshot was actually created
+    if not os.path.exists(raw_path):
+        sys.exit(f"ERROR: Screenshot failed. File not created: {raw_path}")
+
+    # Resize if needed
+    img = PILImg.open(raw_path)
+    if img.width > max_width:
+        ratio = max_width / img.width
+        img = img.resize((max_width, int(img.height * ratio)), PILImg.LANCZOS)
+
+    # Save (JPEG for .jpg, PNG otherwise)
+    if output_path.lower().endswith(('.jpg', '.jpeg')):
+        img.save(output_path, quality=85)
+    else:
+        img.save(output_path)
+
+    # Clean up raw
+    if os.path.exists(raw_path):
+        os.remove(raw_path)
+
     if not os.path.exists(output_path):
-        sys.exit(f"ERROR: Screenshot failed. File not created: {output_path}")
+        sys.exit(f"ERROR: Screenshot post-processing failed: {output_path}")
 
 
 def get_screen_size():
+    """Get LOGICAL screen size (what mouse coordinates use).
+
+    macOS Retina: screencapture outputs physical pixels (e.g. 5120x2880)
+    but mouse coordinates use logical pixels (e.g. 2560x1440).
+    This function returns LOGICAL size so bbox→coordinate mapping is correct.
+    """
     system = platform.system()
     if system == "Darwin":
         out = subprocess.check_output([
             "python3", "-c",
             "import AppKit; s=AppKit.NSScreen.mainScreen().frame().size; print(int(s.width), int(s.height))"
         ]).decode().strip().split()
+        # AppKit frame().size returns LOGICAL pixels — correct for mouse coords
         return int(out[0]), int(out[1])
     elif system == "Linux":
         out = subprocess.check_output(["xdotool", "getdisplaygeometry"]).decode().strip().split()
@@ -225,10 +260,13 @@ def main():
 
     elapsed = time.time() - t0
 
-    # Save annotated image
+    # Save annotated image (JPEG if .jpg extension, smaller files)
     from PIL import Image
     labeled_img = Image.open(io.BytesIO(base64.b64decode(labeled_b64)))
-    labeled_img.save(args.output)
+    if args.output.lower().endswith(('.jpg', '.jpeg')):
+        labeled_img.save(args.output, quality=85)
+    else:
+        labeled_img.save(args.output)
 
     # Save elements JSON
     with open(args.json, "w", encoding="utf-8") as f:
