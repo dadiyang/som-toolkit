@@ -216,3 +216,36 @@ text: ""  ← 空！
 **规则**：`mob-click --text` 会自动搜索 text → content_desc → resource_id。但 `mob-find` 搜索时也要注意看 content_desc 列。
 
 **已修复**：`find_and_tap` 新增 Tier 2b：content_desc 匹配（在 clickable 元素上）。
+
+### 坑 12：底部 Tab 的 text 和 clickable 分离
+
+**场景**：闲鱼底部导航栏（闲鱼/北京/消息/我的）的文字在 static 元素上，clickable 在另一个元素上且 text 为空。
+
+**结构**：
+```
+clickable [67] desc="我的，未选中状态" text="" ← 实际可点击
+static    [71] desc="" text="我的"              ← 只是文字标签
+```
+
+**规则**：`mob-click --text "我的"` 现在能通过 content_desc 匹配到 clickable 元素。
+
+### 坑 13：搜索结果页（WebView）看不到底部 Tab
+
+**场景**：闲鱼 deeplink 搜索结果是 WebView 页面，底部导航栏不在 UI 树里。
+
+**规则**：先点"返回"回到原生首页，再操作底部 Tab。
+
+## 闲鱼完整操作流程验证记录
+
+以下流程已端到端验证通过（2026-03-27）：
+
+```
+1. 启动闲鱼 → 处理一键登录 → 处理协议同意
+2. 底部 Tab 切换：闲鱼/消息/我的
+3. Deeplink 搜索：fleamarket://searchresult?keyword=二手Switch
+4. 点击搜索结果商品 → 进入详情页
+5. 详情页提取：¥750, 包邮, 卖家 Lili/佛山, SKU (任天堂/续航版/日版)
+6. 收藏商品：mob-click --text "收藏"
+7. 返回搜索 → 滚动 → 第二个商品 → ¥1399, 包邮, 广州
+8. 个人中心：用户名/鱼力值/发布数/收藏/浏览/交易
+```
