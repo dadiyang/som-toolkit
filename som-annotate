@@ -22,18 +22,18 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 def find_omniparser():
     """Search for OmniParser in standard locations."""
     candidates = [
-        os.path.join(SCRIPT_DIR, "omniparser"),           # symlink/subdir
-        os.path.join(SCRIPT_DIR, "..", "OmniParser"),      # sibling dir
-        os.path.join(os.path.expanduser("~"), "OmniParser"),  # home dir
-        os.environ.get("OMNIPARSER_DIR", ""),              # env var
+        os.environ.get("OMNIPARSER_DIR", ""),                          # env var (highest priority)
+        os.path.join(os.path.expanduser("~"), "data", "omniparser"),   # install.sh default
+        os.path.join(SCRIPT_DIR, "omniparser"),                        # legacy: symlink/subdir
+        os.path.join(SCRIPT_DIR, "..", "OmniParser"),                  # legacy: sibling dir
+        os.path.join(os.path.expanduser("~"), "OmniParser"),           # legacy: home dir
     ]
     for path in candidates:
         if path and os.path.isfile(os.path.join(path, "util", "omniparser.py")):
             return path
     sys.exit(
         "ERROR: OmniParser not found.\n"
-        "Run install.sh, or set OMNIPARSER_DIR, or create a symlink:\n"
-        f"  ln -s /path/to/OmniParser {os.path.join(SCRIPT_DIR, 'omniparser')}"
+        "Run install.sh, or set OMNIPARSER_DIR=/path/to/omniparser"
     )
 
 

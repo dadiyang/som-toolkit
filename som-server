@@ -25,10 +25,11 @@ DEFAULT_PORT = 8765
 
 def find_omniparser():
     candidates = [
+        os.environ.get("OMNIPARSER_DIR", ""),
+        os.path.join(os.path.expanduser("~"), "data", "omniparser"),
         os.path.join(SCRIPT_DIR, "omniparser"),
         os.path.join(SCRIPT_DIR, "..", "OmniParser"),
         os.path.join(os.path.expanduser("~"), "OmniParser"),
-        os.environ.get("OMNIPARSER_DIR", ""),
     ]
     for path in candidates:
         if path and os.path.isfile(os.path.join(path, "util", "omniparser.py")):

@@ -15,7 +15,7 @@ if ! command -v $PYTHON &>/dev/null; then
 fi
 echo "Python: $($PYTHON --version)"
 
-# 2. 创建 venv (避免污染系统环境)
+# 2. 创建 venv (gitignore 已排除)
 if [ ! -d "$SCRIPT_DIR/venv" ]; then
     echo "Creating virtualenv..."
     $PYTHON -m venv "$SCRIPT_DIR/venv"
@@ -75,9 +75,9 @@ else
     fi
 fi
 
-# 6. 下载 OmniParser 源码 (只需要 util/ 目录)
-echo "Setting up OmniParser..."
-OMNI_DIR="$SCRIPT_DIR/omniparser"
+# 6. 下载 OmniParser 源码到 ~/data/omniparser/ (不污染项目目录)
+OMNI_DIR="${OMNIPARSER_DIR:-$HOME/data/omniparser}"
+echo "Setting up OmniParser at $OMNI_DIR ..."
 mkdir -p "$OMNI_DIR/util"
 
 # Download from GitHub as zip if not exists
@@ -89,6 +89,9 @@ if [ ! -f "$OMNI_DIR/util/omniparser.py" ]; then
     cp -r /tmp/OmniParser-master/util/* "$OMNI_DIR/util/"
     rm -rf "$TMP_ZIP" /tmp/OmniParser-master
 fi
+
+echo "OmniParser source: $OMNI_DIR"
+echo "To use a different location: export OMNIPARSER_DIR=/your/path"
 
 # 7. Patch utils.py for compatibility
 echo "Patching for compatibility..."
@@ -136,13 +139,14 @@ print('Model weights ready!')
 "
 
 echo ""
-echo "Weights location: $WEIGHTS_DIR"
-echo "To use a different location: export SOM_WEIGHTS_DIR=/your/path"
+echo "Weights: $WEIGHTS_DIR"
+echo "Source:  $OMNI_DIR"
+echo "To override: SOM_WEIGHTS_DIR, OMNIPARSER_DIR"
 
 echo ""
 echo "=== Installation Complete ==="
 echo "Usage:"
 echo "  source $SCRIPT_DIR/venv/bin/activate"
-echo "  som-annotate                    # Annotate current screen"
-echo "  som-click <element_number>      # Click element by SoM number"
-echo "  som-type <element_number> text  # Click element and type text"
+echo "  python3 som-toolkit/som-annotate --no-caption -o page.jpg -j page.json"
+echo "  python3 som-toolkit/som-find --summary -j page.json"
+echo "  python3 som-toolkit/som-click 42 -j page.json"
