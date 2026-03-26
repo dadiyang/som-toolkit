@@ -188,3 +188,16 @@ mob-type --key BACK
 | 微博 | rightButton | midButton | leftButton |
 | 知乎 | 待确认（WebView 区域） | - | - |
 | 闲鱼 | WebView 区域 | - | - |
+
+### 坑 10：闲鱼详情页渲染方式不统一
+
+**场景**：闲鱼的商品详情页有两种渲染方式，取决于商品类型。
+
+| 类型 | 渲染 | uiautomator 覆盖 |
+|------|------|-----------------|
+| 个人闲置商品 | **原生** | 高（价格/运费/卖家/SKU 全部可读） |
+| 第三方店铺/验货宝 | **WebView** | 极低（5%，只有导航栏） |
+
+**判断方法**：`mob-annotate` 后看有没有 `detail_parent_recycler_view`（原生）还是 `ice-container`（WebView）。
+
+**规则**：原生页面直接用 `mob-find`，WebView 页面用 OCR 补充。
