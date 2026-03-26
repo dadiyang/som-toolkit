@@ -42,28 +42,18 @@ def scroll(direction, count=1, lines=0):
         return
 
     if lines > 0:
-        # Fine scroll using mouse wheel
+        # Fine scroll using mouse wheel events
         wheel_dir = 5 if direction == "down" else 4  # X11: 5=down, 4=up
         for _ in range(count):
             if system == "Darwin":
-                # AppleScript scroll: negative=down, positive=up
+                # CGEvent scroll wheel — the only reliable method on macOS
+                # Negative = scroll down, positive = scroll up
                 delta = -lines if direction == "down" else lines
-                subprocess.run(["osascript", "-e",
-                    f'tell application "System Events" to scroll area 1 by {delta}'],
-                    check=False)
-                # Fallback: use cliclick if available
-                try:
-                    scroll_arg = f"d:{lines}" if direction == "down" else f"u:{lines}"
-                    subprocess.run(["cliclick", f"w:{scroll_arg}"],
-                                   capture_output=True, check=True)
-                except (FileNotFoundError, subprocess.CalledProcessError):
-                    # AppleScript fallback: arrow keys
-                    key_code = 125 if direction == "down" else 126  # down/up arrow
-                    for _ in range(lines):
-                        subprocess.run(["osascript", "-e",
-                            f'tell application "System Events" to key code {key_code}'],
-                            check=False)
-                        time.sleep(0.05)
+                subprocess.run([sys.executable, "-c", f"""
+import Quartz
+event = Quartz.CGEventCreateScrollWheelEvent(None, Quartz.kCGScrollEventUnitLine, 1, {delta})
+Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
+"""], check=True)
             elif system == "Linux":
                 for _ in range(lines):
                     subprocess.run(["xdotool", "click", str(wheel_dir)], check=True)
