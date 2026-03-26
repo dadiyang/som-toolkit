@@ -323,6 +323,8 @@ def find_and_tap(elements, *, text=None, resource_id=None, content_desc=None):
     Returns (success: bool, element_tapped: MobElement|None)
     """
     if text:
+        tl = text.lower().strip()
+
         # Tier 1: Exact text match on clickable elements
         exact_clickable = [e for e in elements
                            if e.clickable and e.text.strip() == text.strip()]
@@ -330,12 +332,20 @@ def find_and_tap(elements, *, text=None, resource_id=None, content_desc=None):
             tap_element(exact_clickable[0])
             return True, exact_clickable[0]
 
-        # Tier 2: Partial match on clickable elements
+        # Tier 2: Partial text match on clickable elements (text field)
         partial_clickable = [e for e in elements
-                             if e.clickable and text.lower() in e.text.lower()]
+                             if e.clickable and tl in e.text.lower()]
         if partial_clickable:
             tap_element(partial_clickable[0])
             return True, partial_clickable[0]
+
+        # Tier 2b: Match content_desc on clickable elements
+        # Chinese apps often put button names in content_desc, not text
+        desc_clickable = [e for e in elements
+                          if e.clickable and tl in e.content_desc.lower()]
+        if desc_clickable:
+            tap_element(desc_clickable[0])
+            return True, desc_clickable[0]
 
     # Tier 3: resource_id match
     if resource_id:

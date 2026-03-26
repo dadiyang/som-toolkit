@@ -201,3 +201,18 @@ mob-type --key BACK
 **判断方法**：`mob-annotate` 后看有没有 `detail_parent_recycler_view`（原生）还是 `ice-container`（WebView）。
 
 **规则**：原生页面直接用 `mob-find`，WebView 页面用 OCR 补充。
+
+### 坑 11：中国 App 按钮名在 content_desc 不在 text
+
+**场景**：闲鱼的收藏/评论/购买/聊一聊按钮，text 字段为空，名字在 content_desc 里。
+
+**例子**：
+```
+resource_id: com.taobao.idlefish:id/detail_left_button
+content_desc: "收藏按钮"
+text: ""  ← 空！
+```
+
+**规则**：`mob-click --text` 会自动搜索 text → content_desc → resource_id。但 `mob-find` 搜索时也要注意看 content_desc 列。
+
+**已修复**：`find_and_tap` 新增 Tier 2b：content_desc 匹配（在 clickable 元素上）。
