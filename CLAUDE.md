@@ -81,12 +81,12 @@ xdotool key ctrl+l && sleep 0.3 && xdotool key ctrl+v && sleep 0.3 && xdotool ke
 
 ```bash
 som-scroll down                # 整页翻（Page Down）
-som-scroll down --lines 3      # 精细滚 3 行（适合 SKU 区域，不会滚过头）
-som-scroll down --lines 5      # 约半屏
+som-scroll down --lines 1      # 精细滚 100px（约 1 个 SKU 选项高度）
+som-scroll down --lines 3      # 精细滚 300px（约半屏）
 som-scroll top                 # 回到页面顶部
 ```
 
-**选 SKU 时用 `--lines 3`**，整页翻会把 SKU 下拉菜单滚出视口。
+**1 line = 100 逻辑像素**。选 SKU 时用 `--lines 1` 或 `--lines 2`，整页翻会把下拉菜单滚出视口。
 
 ## 信息提取
 

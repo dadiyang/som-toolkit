@@ -4,9 +4,9 @@ som-scroll: 页面滚动 + 自动截图标注
 
 用法:
     som-scroll down                  # 向下滚动一页 (Page Down)
-    som-scroll down --lines 3        # 向下滚动 3 行（精细滚动，适合 SKU 区域）
-    som-scroll down --lines 5        # 向下滚动 5 行（约半屏）
-    som-scroll up --lines 3          # 向上滚动 3 行
+    som-scroll down --lines 1        # 向下滚动 100px（约 1 个 SKU 选项高度）
+    som-scroll down --lines 3        # 向下滚动 300px（精细滚动，适合 SKU 区域）
+    som-scroll up --lines 2          # 向上滚动 200px
     som-scroll top                   # 回到顶部
     som-scroll bottom                # 到底部
     som-scroll down --annotate       # 滚动后自动标注
@@ -21,11 +21,15 @@ import sys
 import time
 
 
+PIXELS_PER_LINE = 100  # 1 line = 100 logical pixels
+
+
 def scroll(direction, count=1, lines=0):
     """Scroll the page.
 
     lines=0 (default): page scroll (Page_Down/Page_Up)
-    lines=N: fine scroll by N lines using mouse wheel (3 lines ≈ 1 SKU row)
+    lines=N: fine scroll by N * 100px using pixel-level mouse wheel events.
+             1 line ≈ 100px (about 2-3 rows of text or 1 SKU option).
     """
     system = platform.system()
 
@@ -45,17 +49,22 @@ def scroll(direction, count=1, lines=0):
         # Fine scroll using mouse wheel events
         wheel_dir = 5 if direction == "down" else 4  # X11: 5=down, 4=up
         for _ in range(count):
+            pixels = lines * PIXELS_PER_LINE
             if system == "Darwin":
-                # CGEvent scroll wheel — the only reliable method on macOS
+                # CGEvent pixel-level scroll — exact and reliable on macOS
+                # kCGScrollEventUnitPixel (0) for precise control
                 # Negative = scroll down, positive = scroll up
-                delta = -lines if direction == "down" else lines
+                delta = -pixels if direction == "down" else pixels
                 subprocess.run([sys.executable, "-c", f"""
 import Quartz
-event = Quartz.CGEventCreateScrollWheelEvent(None, Quartz.kCGScrollEventUnitLine, 1, {delta})
+event = Quartz.CGEventCreateScrollWheelEvent(None, Quartz.kCGScrollEventUnitPixel, 1, {delta})
 Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
 """], check=True)
             elif system == "Linux":
-                for _ in range(lines):
+                # xdotool click 5/4 = one wheel tick ≈ 3 text lines ≈ 45px
+                # Scale to match PIXELS_PER_LINE
+                ticks = max(1, pixels // 45)
+                for _ in range(ticks):
                     subprocess.run(["xdotool", "click", str(wheel_dir)], check=True)
                     time.sleep(0.05)
             time.sleep(0.3)
@@ -115,7 +124,7 @@ def main():
     ap.add_argument("direction", choices=["down", "up", "top", "bottom"])
     ap.add_argument("-n", "--count", type=int, default=1, help="Number of scrolls")
     ap.add_argument("-l", "--lines", type=int, default=0,
-                    help="Fine scroll by N lines (mouse wheel). 0=page scroll. 3≈one SKU row.")
+                    help="Fine scroll N lines (1 line=100px). 0=page scroll. 1≈one SKU row, 3≈300px.")
     ap.add_argument("--annotate", "-a", action="store_true", help="Annotate after scrolling")
     ap.add_argument("--collect", "-c", action="store_true", help="Scroll N times, annotate each, merge results")
     ap.add_argument("--output", "-o", default="som_scrolled", help="Output prefix")
