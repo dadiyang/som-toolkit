@@ -1,0 +1,93 @@
+#!/usr/bin/env python3
+"""
+som-tab: 浏览器标签页管理
+处理新标签打开、标签切换等场景。
+
+用法:
+    som-tab next                # 切到下一个标签 (Ctrl+Tab)
+    som-tab prev                # 切到上一个标签 (Ctrl+Shift+Tab)
+    som-tab 3                   # 切到第 3 个标签 (Ctrl+3)
+    som-tab last                # 切到最后一个标签 (Ctrl+9)
+    som-tab close               # 关闭当前标签 (Ctrl+W)
+    som-tab new                 # 新建标签 (Ctrl+T)
+"""
+import argparse
+import platform
+import subprocess
+import sys
+import time
+
+
+def press_key(key_combo):
+    system = platform.system()
+    if system == "Darwin":
+        # On macOS, browser tab shortcuts use Cmd instead of Ctrl
+        key_combo = key_combo.replace("ctrl+", "cmd+")
+        parts = key_combo.lower().split("+")
+        actual_key = parts[-1]
+        modifiers = parts[:-1]
+
+        mod_map = {
+            "cmd": "command down",
+            "ctrl": "control down",
+            "shift": "shift down",
+            "alt": "option down",
+        }
+        special_key_codes = {
+            "tab": 48, "w": 13, "t": 17,
+        }
+
+        mod_str = ", ".join(mod_map.get(m, m) for m in modifiers)
+
+        if actual_key in special_key_codes:
+            code = special_key_codes[actual_key]
+            if mod_str:
+                script = f'tell application "System Events" to key code {code} using {{{mod_str}}}'
+            else:
+                script = f'tell application "System Events" to key code {code}'
+        else:
+            if mod_str:
+                script = f'tell application "System Events" to keystroke "{actual_key}" using {{{mod_str}}}'
+            else:
+                script = f'tell application "System Events" to keystroke "{actual_key}"'
+        subprocess.run(["osascript", "-e", script], check=True)
+    elif system == "Linux":
+        subprocess.run(["xdotool", "key", key_combo], check=True)
+
+
+def main():
+    ap = argparse.ArgumentParser(description="Browser tab management")
+    ap.add_argument("action", help="next, prev, close, new, last, or tab number (1-9)")
+    args = ap.parse_args()
+
+    action = args.action.lower()
+
+    if action == "next":
+        press_key("ctrl+Tab")
+        print("Switched to next tab")
+    elif action == "prev":
+        press_key("ctrl+shift+Tab")
+        print("Switched to previous tab")
+    elif action == "close":
+        press_key("ctrl+w")
+        print("Closed current tab")
+    elif action == "new":
+        press_key("ctrl+t")
+        print("Opened new tab")
+    elif action == "last":
+        press_key("ctrl+9")
+        print("Switched to last tab")
+    elif action.isdigit() and 1 <= int(action) <= 9:
+        press_key(f"ctrl+{action}")
+        print(f"Switched to tab {action}")
+    else:
+        print(f"Unknown action: {action}", file=sys.stderr)
+        ap.print_help()
+        return 1
+
+    time.sleep(0.5)  # Wait for tab switch to complete
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -17,17 +17,41 @@ import sys
 import time
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-OMNI_DIR = os.path.join(SCRIPT_DIR, "omniparser")
+
+
+def find_omniparser():
+    """Search for OmniParser in standard locations."""
+    candidates = [
+        os.path.join(SCRIPT_DIR, "omniparser"),           # symlink/subdir
+        os.path.join(SCRIPT_DIR, "..", "OmniParser"),      # sibling dir
+        os.path.join(os.path.expanduser("~"), "OmniParser"),  # home dir
+        os.environ.get("OMNIPARSER_DIR", ""),              # env var
+    ]
+    for path in candidates:
+        if path and os.path.isfile(os.path.join(path, "util", "omniparser.py")):
+            return path
+    sys.exit(
+        "ERROR: OmniParser not found.\n"
+        "Run install.sh, or set OMNIPARSER_DIR, or create a symlink:\n"
+        f"  ln -s /path/to/OmniParser {os.path.join(SCRIPT_DIR, 'omniparser')}"
+    )
+
+
+OMNI_DIR = find_omniparser()
 
 # ─── 截图 ───────────────────────────────────────────────
 def take_screenshot(output_path):
+    """Take a fresh screenshot. Deletes existing file first to avoid stale data."""
+    # Remove existing file to guarantee freshness
+    if os.path.exists(output_path):
+        os.remove(output_path)
+
     system = platform.system()
     if system == "Darwin":
         subprocess.run(["screencapture", "-x", output_path], check=True)
     elif system == "Linux":
         display = os.environ.get("DISPLAY")
         if not display:
-            # Try to find an active display
             for d in [":10.0", ":0"]:
                 try:
                     subprocess.run(["xdotool", "getdisplaygeometry"],
@@ -38,6 +62,10 @@ def take_screenshot(output_path):
                 except (subprocess.CalledProcessError, FileNotFoundError):
                     continue
         subprocess.run(["scrot", output_path], check=True)
+
+    # Verify screenshot was actually created
+    if not os.path.exists(output_path):
+        sys.exit(f"ERROR: Screenshot failed. File not created: {output_path}")
     else:
         raise RuntimeError(f"Unsupported platform: {system}")
 
@@ -166,6 +194,7 @@ def main():
     ap.add_argument("--json", "-j", default="som_elements.json", help="Elements JSON path")
     ap.add_argument("--screenshot", "-s", help="Use existing screenshot instead of capturing")
     ap.add_argument("--quiet", "-q", action="store_true", help="Minimal output")
+    ap.add_argument("--wait", "-w", type=float, default=1.0, help="Wait seconds before screenshot (default 1.0)")
     args = ap.parse_args()
 
     screen_w, screen_h = get_screen_size()
@@ -175,6 +204,8 @@ def main():
     # Screenshot
     raw_path = args.screenshot or "/tmp/som_raw_screenshot.png"
     if not args.screenshot:
+        if args.wait > 0:
+            time.sleep(args.wait)
         if not args.quiet:
             print("Taking screenshot...", file=sys.stderr)
         take_screenshot(raw_path)

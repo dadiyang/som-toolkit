@@ -97,6 +97,19 @@ som-scroll down --annotate      # 滚动后自动标注
 som-scroll down -n 3 --collect  # 滚动 3 页，合并所有视口元素（完整信息提取）
 ```
 
+### som-tab：浏览器标签页管理
+
+```bash
+som-tab next                    # 下一个标签 (Ctrl+Tab / Cmd+Tab)
+som-tab prev                    # 上一个标签
+som-tab 2                       # 切到第 2 个标签 (Ctrl+2 / Cmd+2)
+som-tab last                    # 切到最后一个标签
+som-tab close                   # 关闭当前标签
+som-tab new                     # 新建标签
+```
+
+**重要**：eBay 等电商网站的商品链接会在**新标签页**打开。点击商品后必须 `som-tab next` 或 `som-tab 2` 切到新标签，否则 `som-annotate` 截的还是旧页面。
+
 ### som-server：模型常驻服务（加速用）
 
 ```bash
@@ -142,10 +155,16 @@ som-server start --port 8766    # 指定端口（默认 8765）
 - GPU 模式（需要 ~3GB VRAM）：~5秒/张
 - macOS Apple Silicon (MPS)：~10秒/张
 
-### 元素编号会变
+### 元素编号会变（最重要的规则）
 - 每次 `som-annotate` 后编号重新分配
 - **永远不要缓存编号**，每次操作前必须重新标注
-- 页面滚动、弹窗出现后编号全部失效
+- 页面滚动、弹窗出现、标签切换后编号全部失效
+- **实测教训**：eBay Buy 按钮第一次标注在 (2275,1736)，页面滚动后实际在 (2280,1319)，用旧坐标直接点歪
+
+### 新标签页处理（实测 eBay 必踩的坑）
+- 电商网站商品链接通常在**新标签页**打开
+- 点击商品后 `som-annotate` 截到的还是旧标签 → **必须先 `som-tab next` 切标签**
+- 标准流程：`som-click 商品` → `som-tab next` → `som-annotate`（截新页面）
 
 ### 滚动与视口（重要）
 - SoM 只能检测**当前视口内**的元素，滚动出去的看不到

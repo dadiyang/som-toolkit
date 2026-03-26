@@ -23,11 +23,23 @@ PID_FILE = os.path.join(SCRIPT_DIR, ".som-server.pid")
 DEFAULT_PORT = 8765
 
 
+def find_omniparser():
+    candidates = [
+        os.path.join(SCRIPT_DIR, "omniparser"),
+        os.path.join(SCRIPT_DIR, "..", "OmniParser"),
+        os.path.join(os.path.expanduser("~"), "OmniParser"),
+        os.environ.get("OMNIPARSER_DIR", ""),
+    ]
+    for path in candidates:
+        if path and os.path.isfile(os.path.join(path, "util", "omniparser.py")):
+            return path
+    sys.exit("ERROR: OmniParser not found. Run install.sh first.")
+
+
 def start_server(port):
     from http.server import HTTPServer, BaseHTTPRequestHandler
 
-    # Load OmniParser once
-    omni_dir = os.path.join(SCRIPT_DIR, "omniparser")
+    omni_dir = find_omniparser()
     sys.path.insert(0, omni_dir)
     os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
 
