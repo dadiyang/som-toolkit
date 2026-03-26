@@ -28,6 +28,23 @@ mob-annotate → mob-find → mob-click → mob-annotate 验证
 
 **每次操作后必须重新 `mob-annotate`**。
 
+## 最重要的规则：WebView 策略切换
+
+```
+mob-annotate → mob-find --summary → 看有效文字数量
+
+IF 有效文字 < 5 个（只有导航按钮没有内容）
+THEN 当前页面是 WebView 盲区
+THEN 停止使用 mob-find 找元素（一定找不到）
+THEN 改用 mob-click --xy 坐标直接点击
+
+常用 WebView 页面坐标：
+  闲鱼搜索结果：左列第一个商品 (180, 500)，右列 (540, 500)
+  闲鱼商品详情（店铺类）：价格区域 (~100, 350)，购买按钮 (~360, 1550)
+```
+
+**这是 agent 最容易犯的错误**：在 WebView 页面反复 mob-find 找元素，什么都找不到却不切换策略。
+
 ## 核心知识：中国 App 的 WebView 盲区
 
 **微博、知乎**：原生 RecyclerView → uiautomator 能读到全部文字 → 直接用 mob-find。
