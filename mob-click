@@ -1,0 +1,87 @@
+#!/usr/bin/env python3
+"""
+mob-click: 点击 Android UI 元素（按编号或坐标）
+
+用法:
+    mob-click 5                          # 点击编号 5
+    mob-click 5 -j mob_elements.json     # 指定元素文件
+    mob-click --xy 360,800               # 直接坐标点击
+    mob-click --text "确认"              # 按文字查找并点击（自动 dump + 3级回退）
+    mob-click --id "com.app:id/btn"      # 按 resource_id 查找并点击
+"""
+import argparse
+import json
+import os
+import sys
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, SCRIPT_DIR)
+
+from mob_core import tap, tap_element, dump_ui_tree, find_and_tap, find_element, MobElement
+
+
+def main():
+    ap = argparse.ArgumentParser(description="Click Android element")
+    ap.add_argument("index", nargs="?", type=int, help="Element index")
+    ap.add_argument("-j", "--json", default="mob_elements.json")
+    ap.add_argument("--xy", help="Direct coordinates x,y")
+    ap.add_argument("--text", help="Find by text and click (auto dumps UI tree)")
+    ap.add_argument("--id", help="Find by resource_id and click")
+    ap.add_argument("--desc", help="Find by content-desc and click")
+    ap.add_argument("--long", action="store_true", help="Long press instead of tap")
+    args = ap.parse_args()
+
+    if args.xy:
+        x, y = map(int, args.xy.split(","))
+        if args.long:
+            from mob_core import long_press
+            long_press(x, y)
+        else:
+            tap(x, y)
+        print(f"OK ({x},{y})")
+        return 0
+
+    # Smart find: dump fresh UI tree and search
+    if args.text or args.id or args.desc:
+        elements = dump_ui_tree()
+        success, elem = find_and_tap(elements, text=args.text,
+                                      resource_id=args.id,
+                                      content_desc=args.desc)
+        if success:
+            print(f'OK [{elem.index}] ({elem.center[0]},{elem.center[1]}) "{elem.label}"')
+            return 0
+        else:
+            search = args.text or args.id or args.desc
+            print(f'NOT FOUND: "{search}"', file=sys.stderr)
+            # Show similar elements
+            for e in elements:
+                if e.clickable and e.label:
+                    print(f'  [{e.index}] "{e.label}"', file=sys.stderr)
+            return 1
+
+    # Index-based click from JSON
+    if args.index is not None:
+        with open(args.json) as f:
+            elements_data = json.load(f)
+        matches = [e for e in elements_data if e["index"] == args.index]
+        if not matches:
+            print(f"ERROR: Element [{args.index}] not found.", file=sys.stderr)
+            return 1
+        elem = matches[0]
+        x, y = elem["center_x"], elem["center_y"]
+        label = elem.get("label", "")
+        if args.long:
+            from mob_core import long_press
+            long_press(x, y)
+            print(f'Long press [{args.index}] ({x},{y}) "{label}"')
+        else:
+            tap(x, y)
+            print(f'OK [{args.index}] ({x},{y}) "{label}"')
+        return 0
+
+    ap.print_help()
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,100 @@
+#!/usr/bin/env python3
+"""
+mob-type: Android 文字输入 + 按键
+
+用法:
+    mob-type 5 "hello"                   # 点击元素 5 然后输入
+    mob-type --text "搜索" "关键词"       # 找到"搜索"输入框然后输入
+    mob-type --key BACK                  # 按返回键
+    mob-type --key ENTER                 # 按回车
+    mob-type --key HOME                  # 按 Home
+"""
+import argparse
+import json
+import os
+import sys
+import time
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, SCRIPT_DIR)
+
+from mob_core import (
+    tap, input_text, press_key, press_back, press_enter,
+    dump_ui_tree, find_and_tap,
+)
+
+
+def main():
+    ap = argparse.ArgumentParser(description="Android text input")
+    ap.add_argument("index", nargs="?", type=int, help="Element index to click first")
+    ap.add_argument("text_to_type", nargs="?", help="Text to type")
+    ap.add_argument("-j", "--json", default="mob_elements.json")
+    ap.add_argument("--text", help="Find input field by text, click it, then type")
+    ap.add_argument("--key", help="Press a key: BACK, HOME, ENTER, etc.")
+    ap.add_argument("--clear", action="store_true", help="Clear field first (Ctrl+A + Delete)")
+    args = ap.parse_args()
+
+    # Key-only mode
+    if args.key and args.index is None and not args.text:
+        press_key(args.key)
+        print(f"Key: {args.key}")
+        return 0
+
+    # Smart find mode
+    if args.text:
+        elements = dump_ui_tree()
+        success, elem = find_and_tap(elements, text=args.text)
+        if not success:
+            print(f'Input field "{args.text}" not found', file=sys.stderr)
+            return 1
+        time.sleep(0.3)
+        if args.clear:
+            # Select all + delete
+            press_key("KEYCODE_MOVE_HOME")
+            time.sleep(0.1)
+            # Long press shift+end to select all
+            os.popen("adb shell input keyevent --longpress KEYCODE_MOVE_END").read()
+            time.sleep(0.1)
+            press_key("KEYCODE_DEL")
+            time.sleep(0.1)
+        if args.text_to_type:
+            input_text(args.text_to_type)
+            print(f'Typed "{args.text_to_type}" in "{args.text}"')
+        return 0
+
+    # Index mode
+    if args.index is not None:
+        with open(args.json) as f:
+            elements_data = json.load(f)
+        matches = [e for e in elements_data if e["index"] == args.index]
+        if not matches:
+            print(f"ERROR: Element [{args.index}] not found.", file=sys.stderr)
+            return 1
+        elem = matches[0]
+        tap(elem["center_x"], elem["center_y"])
+        time.sleep(0.3)
+
+        if args.clear:
+            press_key("KEYCODE_MOVE_HOME")
+            time.sleep(0.1)
+            os.popen("adb shell input keyevent --longpress KEYCODE_MOVE_END").read()
+            time.sleep(0.1)
+            press_key("KEYCODE_DEL")
+            time.sleep(0.1)
+
+        if args.text_to_type:
+            input_text(args.text_to_type)
+            print(f'Typed "{args.text_to_type}" at [{args.index}]')
+        elif args.key:
+            press_key(args.key)
+            print(f'Key: {args.key} at [{args.index}]')
+        else:
+            print(f'Clicked [{args.index}]')
+        return 0
+
+    ap.print_help()
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

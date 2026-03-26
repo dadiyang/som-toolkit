@@ -19,3 +19,4 @@ som-server.log
 # OS
 .DS_Store
 Thumbs.db
+mob_core.pyc
