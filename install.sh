@@ -100,9 +100,9 @@ if [ -f "$UTILS" ]; then
     sed -i.bak "s/reader = easyocr.Reader(\['en'\])/reader = easyocr.Reader(['en'], gpu=False)/" "$UTILS" 2>/dev/null || true
 fi
 
-# 8. 下载模型权重
-echo "Downloading model weights..."
-WEIGHTS_DIR="$OMNI_DIR/weights"
+# 8. 下载模型权重到 ~/data/models/omniparser/ (不污染源码)
+WEIGHTS_DIR="${SOM_WEIGHTS_DIR:-$HOME/data/models/omniparser}"
+echo "Downloading model weights to $WEIGHTS_DIR ..."
 mkdir -p "$WEIGHTS_DIR/icon_detect" "$WEIGHTS_DIR/icon_caption_florence"
 
 # Set HF mirror for China
@@ -122,19 +122,22 @@ for f in ['model.pt', 'model.yaml', 'train_args.yaml']:
     print(f'Downloading icon_detect/{f}...')
     hf_hub_download('microsoft/OmniParser-v2.0', f'icon_detect/{f}', local_dir=weights_dir)
 
-# Icon caption model (~1GB)
+# Icon caption model (~1GB, optional for --no-caption mode)
 for f in ['config.json', 'generation_config.json', 'model.safetensors']:
     dst = os.path.join(weights_dir, 'icon_caption_florence', f)
     if not os.path.exists(dst):
         print(f'Downloading icon_caption/{f}...')
         path = hf_hub_download('microsoft/OmniParser-v2.0', f'icon_caption/{f}', local_dir=weights_dir)
-        # Copy to florence dir if needed
         src = os.path.join(weights_dir, 'icon_caption', f)
         if os.path.exists(src) and not os.path.exists(dst):
             import shutil
             shutil.copy2(src, dst)
 print('Model weights ready!')
 "
+
+echo ""
+echo "Weights location: $WEIGHTS_DIR"
+echo "To use a different location: export SOM_WEIGHTS_DIR=/your/path"
 
 echo ""
 echo "=== Installation Complete ==="

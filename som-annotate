@@ -126,7 +126,14 @@ def load_parser(use_caption=True):
 
     from util.omniparser import Omniparser
 
-    weights_dir = os.path.join(OMNI_DIR, "weights")
+    default_weights = os.path.join(os.path.expanduser("~"), "data", "models", "omniparser")
+    weights_dir = os.environ.get("SOM_WEIGHTS_DIR", default_weights)
+    # Fallback: check legacy location inside omniparser source
+    if not os.path.isdir(os.path.join(weights_dir, "icon_detect")):
+        legacy = os.path.join(OMNI_DIR, "weights")
+        if os.path.isdir(os.path.join(legacy, "icon_detect")):
+            weights_dir = legacy
+
     config = {
         "som_model_path": os.path.join(weights_dir, "icon_detect", "model.pt"),
         "caption_model_name": "florence2",
