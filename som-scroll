@@ -1,0 +1,127 @@
+#!/usr/bin/env python3
+"""
+som-scroll: 页面滚动 + 自动截图标注
+
+用法:
+    som-scroll down                  # 向下滚动一页
+    som-scroll up                    # 向上滚动一页
+    som-scroll top                   # 回到顶部
+    som-scroll bottom                # 到底部
+    som-scroll down --annotate       # 滚动后自动标注
+    som-scroll down -n 3             # 连续滚动 3 次
+    som-scroll down -n 3 --collect   # 滚动 3 次，合并所有视口元素
+"""
+import argparse
+import json
+import os
+import platform
+import subprocess
+import sys
+import time
+
+
+def scroll(direction, count=1):
+    system = platform.system()
+    key_map = {
+        "down": "Page_Down",
+        "up": "Page_Up",
+        "top": "Home",
+        "bottom": "End",
+    }
+
+    if system == "Darwin":
+        # macOS key codes: Page Down=121, Page Up=116, Home=115, End=119
+        mac_keycode = {"down": 121, "up": 116, "top": 115, "bottom": 119}
+        code = mac_keycode.get(direction, 121)
+        for _ in range(count):
+            subprocess.run(["osascript", "-e",
+                f'tell application "System Events" to key code {code}'],
+                check=False)
+            time.sleep(0.5)
+    elif system == "Linux":
+        key = key_map.get(direction, "Page_Down")
+        for _ in range(count):
+            subprocess.run(["xdotool", "key", key], check=True)
+            time.sleep(0.5)
+
+
+def annotate(output_prefix, json_path):
+    """Call som-annotate (which handles server detection internally)."""
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    annotate_script = os.path.join(script_dir, "som-annotate")
+    result = subprocess.run(
+        [sys.executable, annotate_script, "-o", output_prefix + ".png", "-j", json_path, "-q"],
+        capture_output=True, text=True
+    )
+    if result.returncode != 0:
+        print(f"Annotation failed: {result.stderr}", file=sys.stderr)
+        return None
+    return json_path
+
+
+def merge_elements(all_elements_files):
+    """Merge elements from multiple viewport captures, deduplicating by position."""
+    all_elements = []
+    seen = set()
+
+    for fpath in all_elements_files:
+        with open(fpath) as f:
+            elements = json.load(f)
+        for e in elements:
+            # Dedup by approximate position (within 30px)
+            key = (e["center_x"] // 30, e["center_y"] // 30, e.get("content", "")[:20])
+            if key not in seen:
+                seen.add(key)
+                all_elements.append(e)
+
+    # Re-index
+    for i, e in enumerate(all_elements):
+        e["index"] = i
+
+    return all_elements
+
+
+def main():
+    ap = argparse.ArgumentParser(description="Scroll and optionally annotate")
+    ap.add_argument("direction", choices=["down", "up", "top", "bottom"])
+    ap.add_argument("-n", "--count", type=int, default=1, help="Number of scrolls")
+    ap.add_argument("--annotate", "-a", action="store_true", help="Annotate after scrolling")
+    ap.add_argument("--collect", "-c", action="store_true", help="Scroll N times, annotate each, merge results")
+    ap.add_argument("--output", "-o", default="som_scrolled", help="Output prefix")
+    ap.add_argument("--json", "-j", default="som_elements.json", help="Elements JSON path")
+    args = ap.parse_args()
+
+    if args.collect:
+        # Collect mode: scroll and annotate multiple viewports, then merge
+        temp_files = []
+        for i in range(args.count):
+            if i > 0:
+                scroll(args.direction, 1)
+                time.sleep(1)
+
+            temp_json = f"/tmp/som_viewport_{i}.json"
+            temp_prefix = f"/tmp/som_viewport_{i}"
+            print(f"Viewport {i+1}/{args.count}...", file=sys.stderr)
+            annotate(temp_prefix, temp_json)
+            temp_files.append(temp_json)
+
+        # Merge
+        merged = merge_elements(temp_files)
+        with open(args.json, "w") as f:
+            json.dump(merged, f, ensure_ascii=False, indent=2)
+        print(f"Merged {len(merged)} unique elements from {args.count} viewports", file=sys.stderr)
+
+    else:
+        # Simple scroll
+        scroll(args.direction, args.count)
+        print(f"Scrolled {args.direction} x{args.count}", file=sys.stderr)
+
+        if args.annotate:
+            time.sleep(1)
+            annotate(args.output, args.json)
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

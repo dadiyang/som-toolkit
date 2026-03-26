@@ -1,0 +1,225 @@
+#!/usr/bin/env python3
+"""
+som-server: OmniParser 模型常驻服务
+避免每次 som-annotate 都重新加载模型（170秒→2秒）。
+
+用法:
+    som-server start              # 启动服务（后台运行）
+    som-server stop               # 停止服务
+    som-server status             # 检查状态
+    som-server start --port 8765  # 指定端口
+"""
+import argparse
+import base64
+import io
+import json
+import os
+import signal
+import sys
+import time
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+PID_FILE = os.path.join(SCRIPT_DIR, ".som-server.pid")
+DEFAULT_PORT = 8765
+
+
+def start_server(port):
+    from http.server import HTTPServer, BaseHTTPRequestHandler
+
+    # Load OmniParser once
+    omni_dir = os.path.join(SCRIPT_DIR, "omniparser")
+    sys.path.insert(0, omni_dir)
+    os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
+
+    from util.omniparser import Omniparser
+    from PIL import Image
+
+    weights_dir = os.path.join(omni_dir, "weights")
+    config = {
+        "som_model_path": os.path.join(weights_dir, "icon_detect", "model.pt"),
+        "caption_model_name": "florence2",
+        "caption_model_path": os.path.join(weights_dir, "icon_caption_florence"),
+        "BOX_TRESHOLD": 0.05,
+    }
+
+    print("Loading OmniParser model...", flush=True)
+    t0 = time.time()
+    parser = Omniparser(config)
+    print(f"Model loaded in {time.time()-t0:.1f}s. Server ready on port {port}.", flush=True)
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            if self.path == "/parse":
+                content_length = int(self.headers["Content-Length"])
+                body = self.rfile.read(content_length)
+                req = json.loads(body)
+
+                img_b64 = req["image_base64"]
+                screen_w = req.get("screen_w", 2880)
+                screen_h = req.get("screen_h", 1800)
+
+                t0 = time.time()
+                labeled_b64, parsed_content = parser.parse(img_b64)
+                elapsed = time.time() - t0
+
+                # Convert bbox ratios to screen coordinates
+                elements = []
+                for idx, item in enumerate(parsed_content):
+                    bbox = item["bbox"]
+                    cx = int((bbox[0] + bbox[2]) / 2 * screen_w)
+                    cy = int((bbox[1] + bbox[3]) / 2 * screen_h)
+                    w = int((bbox[2] - bbox[0]) * screen_w)
+                    h = int((bbox[3] - bbox[1]) * screen_h)
+                    elements.append({
+                        "index": idx,
+                        "type": item.get("type", ""),
+                        "content": item.get("content", ""),
+                        "interactivity": item.get("interactivity", False),
+                        "center_x": cx, "center_y": cy,
+                        "width": w, "height": h,
+                        "bbox_ratio": bbox,
+                    })
+
+                response = json.dumps({
+                    "labeled_image_base64": labeled_b64,
+                    "elements": elements,
+                    "elapsed": elapsed,
+                }, ensure_ascii=False)
+
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(response.encode())
+
+            elif self.path == "/health":
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b"ok")
+            else:
+                self.send_response(404)
+                self.end_headers()
+
+        def do_GET(self):
+            if self.path == "/health":
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b"ok")
+            else:
+                self.send_response(404)
+                self.end_headers()
+
+        def log_message(self, format, *args):
+            elapsed_str = ""
+            if hasattr(self, '_elapsed'):
+                elapsed_str = f" [{self._elapsed:.1f}s]"
+            sys.stderr.write(f"[som-server] {args[0]}{elapsed_str}\n")
+
+    server = HTTPServer(("127.0.0.1", port), Handler)
+
+    # Save PID
+    with open(PID_FILE, "w") as f:
+        f.write(str(os.getpid()))
+
+    def cleanup(sig, frame):
+        print("\nShutting down...", flush=True)
+        if os.path.exists(PID_FILE):
+            os.remove(PID_FILE)
+        server.shutdown()
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, cleanup)
+    signal.signal(signal.SIGINT, cleanup)
+
+    print(f"Serving on http://127.0.0.1:{port}", flush=True)
+    server.serve_forever()
+
+
+def get_pid():
+    if os.path.exists(PID_FILE):
+        with open(PID_FILE) as f:
+            pid = int(f.read().strip())
+        try:
+            os.kill(pid, 0)
+            return pid
+        except OSError:
+            os.remove(PID_FILE)
+    return None
+
+
+def main():
+    ap = argparse.ArgumentParser(description="SoM OmniParser server")
+    ap.add_argument("action", choices=["start", "stop", "status"])
+    ap.add_argument("--port", type=int, default=DEFAULT_PORT)
+    ap.add_argument("--foreground", "-f", action="store_true", help="Run in foreground")
+    args = ap.parse_args()
+
+    if args.action == "status":
+        pid = get_pid()
+        if pid:
+            print(f"Running (PID {pid})")
+        else:
+            print("Not running")
+        return 0
+
+    elif args.action == "stop":
+        pid = get_pid()
+        if pid:
+            os.kill(pid, signal.SIGTERM)
+            print(f"Stopped (PID {pid})")
+            time.sleep(1)
+            if os.path.exists(PID_FILE):
+                os.remove(PID_FILE)
+        else:
+            print("Not running")
+        return 0
+
+    elif args.action == "start":
+        pid = get_pid()
+        if pid:
+            print(f"Already running (PID {pid})")
+            return 1
+
+        # Check port availability
+        import socket
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            sock.bind(("127.0.0.1", args.port))
+            sock.close()
+        except OSError:
+            print(f"ERROR: Port {args.port} is already in use.")
+            print(f"Try: som-server start --port {args.port + 1}")
+            # Try to find a free port
+            for p in range(args.port + 1, args.port + 10):
+                try:
+                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    sock.bind(("127.0.0.1", p))
+                    sock.close()
+                    print(f"Available port: {p}")
+                    break
+                except OSError:
+                    continue
+            return 1
+
+        if args.foreground:
+            start_server(args.port)
+        else:
+            # Daemonize
+            child_pid = os.fork()
+            if child_pid == 0:
+                os.setsid()
+                # Redirect stdout/stderr to log
+                log_path = os.path.join(SCRIPT_DIR, "som-server.log")
+                log_fd = open(log_path, "a")
+                os.dup2(log_fd.fileno(), sys.stdout.fileno())
+                os.dup2(log_fd.fileno(), sys.stderr.fileno())
+                start_server(args.port)
+            else:
+                # Wait a moment for the server to initialize
+                print(f"Starting som-server (PID {child_pid})...")
+                print(f"Model loading takes ~170s (CPU) or ~5s (GPU). Check: som-server status")
+                print(f"Log: {os.path.join(SCRIPT_DIR, 'som-server.log')}")
+        return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

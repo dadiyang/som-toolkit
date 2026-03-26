@@ -1,0 +1,202 @@
+#!/usr/bin/env python3
+"""
+som-find: 从 SoM 元素中按条件搜索，返回编号和信息
+专为弱多模态 agent 设计——不需要看图，纯文本操作。
+
+用法:
+    som-find "Buy"                       # 按关键词搜索
+    som-find "Buy" --first               # 只返回第一个匹配
+    som-find --type icon                  # 按类型过滤 (text/icon)
+    som-find --interactive               # 只看可交互元素
+    som-find --area top                   # 按位置过滤
+    som-find "price" --extract            # 提取信息模式
+    som-find --summary                    # 页面概览（给 agent 看的文本摘要）
+"""
+import argparse
+import json
+import sys
+
+
+def load_elements(json_path):
+    with open(json_path) as f:
+        return json.load(f)
+
+
+def match_keyword(element, keyword):
+    """Check if keyword matches element content (case-insensitive)."""
+    content = element.get("content", "").lower()
+    return keyword.lower() in content
+
+
+def match_area(element, area, screen_w=2880, screen_h=1800):
+    """Filter by screen area."""
+    cx, cy = element["center_x"], element["center_y"]
+    third_x = screen_w / 3
+    third_y = screen_h / 3
+
+    if area == "top":
+        return cy < third_y
+    elif area == "bottom":
+        return cy > third_y * 2
+    elif area == "middle":
+        return third_y <= cy <= third_y * 2
+    elif area == "left":
+        return cx < third_x
+    elif area == "right":
+        return cx > third_x * 2
+    elif area == "center":
+        return third_x <= cx <= third_x * 2 and third_y <= cy <= third_y * 2
+    return True
+
+
+def format_element(e):
+    """Format element for display."""
+    content = e.get("content", "").strip()
+    inter = "interactive" if e.get("interactivity") else "static"
+    return f'[{e["index"]:3d}] ({e["center_x"]},{e["center_y"]}) {e["type"]} {inter} "{content}"'
+
+
+def page_summary(elements):
+    """Generate a text summary of the page for weak agents."""
+    lines = []
+    lines.append("=== Page Summary ===")
+
+    # Categorize elements
+    buttons = []
+    links = []
+    inputs = []
+    prices = []
+    shipping = []
+    texts = []
+
+    for e in elements:
+        c = e.get("content", "").strip()
+        if not c:
+            continue
+        cl = c.lower()
+        inter = e.get("interactivity", False)
+
+        if "$" in c or "¥" in c or "price" in cl:
+            prices.append(e)
+        elif any(k in cl for k in ["shipping", "delivery", "free delivery"]):
+            shipping.append(e)
+        elif inter and e["type"] == "icon":
+            buttons.append(e)
+        elif inter and e["type"] == "text":
+            links.append(e)
+        elif len(c) > 5:
+            texts.append(e)
+
+    if prices:
+        lines.append(f"\nPrices ({len(prices)}):")
+        for e in prices:
+            lines.append(f'  [{e["index"]}] {e["content"].strip()}')
+
+    if shipping:
+        lines.append(f"\nShipping ({len(shipping)}):")
+        for e in shipping:
+            lines.append(f'  [{e["index"]}] {e["content"].strip()}')
+
+    if buttons:
+        lines.append(f"\nButtons ({len(buttons)}):")
+        for e in buttons[:15]:
+            lines.append(f'  [{e["index"]}] {e["content"].strip()}')
+
+    if links:
+        lines.append(f"\nClickable text ({len(links)}):")
+        for e in links[:15]:
+            lines.append(f'  [{e["index"]}] {e["content"].strip()}')
+
+    lines.append(f"\nTotal elements: {len(elements)} ({sum(1 for e in elements if e.get('interactivity'))} interactive)")
+    return "\n".join(lines)
+
+
+def extract_info(elements):
+    """Extract structured product information."""
+    info = {
+        "prices": [],
+        "shipping": [],
+        "delivery": [],
+        "returns": [],
+        "sku_options": [],
+        "demand": [],
+        "buttons": [],
+    }
+
+    for e in elements:
+        c = e.get("content", "").strip()
+        if not c:
+            continue
+        cl = c.lower()
+
+        if "$" in c or "¥" in c:
+            info["prices"].append({"index": e["index"], "text": c})
+        elif any(k in cl for k in ["shipping", "usps", "ups", "fedex", "free delivery"]):
+            info["shipping"].append({"index": e["index"], "text": c})
+        elif "delivery" in cl or "estimated" in cl:
+            info["delivery"].append({"index": e["index"], "text": c})
+        elif "return" in cl:
+            info["returns"].append({"index": e["index"], "text": c})
+        elif any(k in cl for k in ["color", "size", "fit", "select"]):
+            info["sku_options"].append({"index": e["index"], "text": c})
+        elif any(k in cl for k in ["sold", "trending", "watching", "available"]):
+            info["demand"].append({"index": e["index"], "text": c})
+        elif any(k in cl for k in ["buy", "add to cart", "checkout"]):
+            info["buttons"].append({"index": e["index"], "text": c})
+
+    return info
+
+
+def main():
+    ap = argparse.ArgumentParser(description="Search SoM elements by keyword/filter")
+    ap.add_argument("keyword", nargs="?", help="Keyword to search")
+    ap.add_argument("--json", "-j", default="som_elements.json")
+    ap.add_argument("--type", "-t", choices=["text", "icon"], help="Filter by type")
+    ap.add_argument("--interactive", "-i", action="store_true", help="Only interactive")
+    ap.add_argument("--area", "-a", choices=["top", "bottom", "middle", "left", "right", "center"])
+    ap.add_argument("--first", "-1", action="store_true", help="Return only first match")
+    ap.add_argument("--summary", "-s", action="store_true", help="Page summary for agent")
+    ap.add_argument("--extract", "-e", action="store_true", help="Extract product info")
+    ap.add_argument("--cmd", action="store_true", help="Output som-click command")
+    args = ap.parse_args()
+
+    elements = load_elements(args.json)
+
+    if args.summary:
+        print(page_summary(elements))
+        return 0
+
+    if args.extract:
+        info = extract_info(elements)
+        print(json.dumps(info, ensure_ascii=False, indent=2))
+        return 0
+
+    # Filter
+    results = elements
+    if args.keyword:
+        results = [e for e in results if match_keyword(e, args.keyword)]
+    if args.type:
+        results = [e for e in results if e.get("type") == args.type]
+    if args.interactive:
+        results = [e for e in results if e.get("interactivity")]
+    if args.area:
+        results = [e for e in results if match_area(e, args.area)]
+
+    if not results:
+        print("No elements found.", file=sys.stderr)
+        return 1
+
+    if args.first:
+        results = results[:1]
+
+    for e in results:
+        if args.cmd:
+            print(f'som-click {e["index"]}')
+        else:
+            print(format_element(e))
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

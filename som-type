@@ -1,0 +1,148 @@
+#!/usr/bin/env python3
+"""
+som-type: 点击元素后输入文字
+用法:
+    som-type 42 "hello world"             # 点击编号 42 然后输入
+    som-type 42 "hello" --clear           # 先清空再输入
+    som-type --xy 500,300 "hello"         # 直接坐标输入
+    som-type --key Return                 # 按键
+    som-type --key "ctrl+a"               # 组合键
+"""
+import argparse
+import json
+import os
+import platform
+import subprocess
+import sys
+import time
+
+
+def click_at(x, y):
+    """Delegate to som-click for consistent cross-platform behavior."""
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    subprocess.run([sys.executable, os.path.join(script_dir, "som-click"), "--xy", f"{x},{y}"],
+                   check=True, capture_output=True)
+
+
+def set_clipboard(text):
+    """Cross-platform clipboard set."""
+    system = platform.system()
+    if system == "Darwin":
+        proc = subprocess.Popen(["pbcopy"], stdin=subprocess.PIPE)
+        proc.communicate(text.encode("utf-8"))
+    elif system == "Linux":
+        proc = subprocess.Popen(["xclip", "-selection", "clipboard"], stdin=subprocess.PIPE)
+        proc.communicate(text.encode("utf-8"))
+
+
+def type_text(text):
+    system = platform.system()
+    # Most reliable method: clipboard + paste (works for all text, all platforms)
+    set_clipboard(text)
+    time.sleep(0.1)
+    if system == "Darwin":
+        subprocess.run(["osascript", "-e",
+            'tell application "System Events" to keystroke "v" using command down'], check=True)
+    elif system == "Linux":
+        subprocess.run(["xdotool", "key", "ctrl+v"], check=True)
+
+
+def press_key(key_combo):
+    system = platform.system()
+    if system == "Darwin":
+        parts = key_combo.lower().split("+")
+        actual_key = parts[-1]
+        modifiers = parts[:-1]
+
+        mod_map = {
+            "ctrl": "control down",
+            "cmd": "command down",
+            "alt": "option down",
+            "shift": "shift down",
+        }
+        # macOS key codes for special keys
+        special_key_codes = {
+            "return": 36, "enter": 36, "tab": 48,
+            "escape": 53, "delete": 51, "backspace": 51,
+            "up": 126, "down": 125, "left": 123, "right": 124,
+            "space": 49, "page_down": 121, "page_up": 116,
+            "home": 115, "end": 119, "f5": 96,
+        }
+
+        mod_str = ", ".join(mod_map.get(m, m) for m in modifiers)
+
+        if actual_key in special_key_codes:
+            code = special_key_codes[actual_key]
+            if mod_str:
+                script = f'tell application "System Events" to key code {code} using {{{mod_str}}}'
+            else:
+                script = f'tell application "System Events" to key code {code}'
+        else:
+            if mod_str:
+                script = f'tell application "System Events" to keystroke "{actual_key}" using {{{mod_str}}}'
+            else:
+                script = f'tell application "System Events" to keystroke "{actual_key}"'
+        subprocess.run(["osascript", "-e", script], check=True)
+    elif system == "Linux":
+        subprocess.run(["xdotool", "key", key_combo], check=True)
+
+
+def main():
+    ap = argparse.ArgumentParser(description="Click element and type text")
+    ap.add_argument("index", nargs="?", type=int, help="Element index")
+    ap.add_argument("text", nargs="?", help="Text to type")
+    ap.add_argument("--json", "-j", default="som_elements.json")
+    ap.add_argument("--xy", help="Direct coordinates x,y")
+    ap.add_argument("--clear", action="store_true", help="Clear field first (Ctrl+A)")
+    ap.add_argument("--key", help="Press a key/combo instead of typing (e.g., Return, ctrl+a)")
+    args = ap.parse_args()
+
+    # Handle key-only mode
+    if args.key and args.index is None and not args.xy:
+        press_key(args.key)
+        print(f"Key: {args.key}")
+        return 0
+
+    # Determine click target
+    if args.xy:
+        x, y = map(int, args.xy.split(","))
+    elif args.index is not None:
+        with open(args.json) as f:
+            elements = json.load(f)
+        matches = [e for e in elements if e["index"] == args.index]
+        if not matches:
+            print(f"ERROR: Element [{args.index}] not found.", file=sys.stderr)
+            return 1
+        elem = matches[0]
+        x, y = elem["center_x"], elem["center_y"]
+    else:
+        ap.print_help()
+        return 1
+
+    # Click
+    click_at(x, y)
+    time.sleep(0.3)
+
+    # Clear if requested
+    if args.clear:
+        if platform.system() == "Darwin":
+            press_key("cmd+a")
+        else:
+            press_key("ctrl+a")
+        time.sleep(0.1)
+
+    # Type or press key
+    if args.key:
+        press_key(args.key)
+        print(f"Key: {args.key} at ({x},{y})")
+    elif args.text:
+        type_text(args.text)
+        print(f'Typed "{args.text}" at ({x},{y})')
+    else:
+        print(f"Clicked ({x},{y})")
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

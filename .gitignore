@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+
+# OmniParser models and source (downloaded by install.sh)
+omniparser/
+
+# Runtime files
+.som-server.pid
+som-server.log
+
+# Screenshots and temp files
+*.png
+*.json
+!package.json
+
+# OS
+.DS_Store
+Thumbs.db
