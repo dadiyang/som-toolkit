@@ -3,12 +3,13 @@
 som-scroll: 页面滚动 + 自动截图标注
 
 用法:
-    som-scroll down                  # 向下滚动一页
-    som-scroll up                    # 向上滚动一页
+    som-scroll down                  # 向下滚动一页 (Page Down)
+    som-scroll down --lines 3        # 向下滚动 3 行（精细滚动，适合 SKU 区域）
+    som-scroll down --lines 5        # 向下滚动 5 行（约半屏）
+    som-scroll up --lines 3          # 向上滚动 3 行
     som-scroll top                   # 回到顶部
     som-scroll bottom                # 到底部
     som-scroll down --annotate       # 滚动后自动标注
-    som-scroll down -n 3             # 连续滚动 3 次
     som-scroll down -n 3 --collect   # 滚动 3 次，合并所有视口元素
 """
 import argparse
@@ -20,29 +21,67 @@ import sys
 import time
 
 
-def scroll(direction, count=1):
-    system = platform.system()
-    key_map = {
-        "down": "Page_Down",
-        "up": "Page_Up",
-        "top": "Home",
-        "bottom": "End",
-    }
+def scroll(direction, count=1, lines=0):
+    """Scroll the page.
 
-    if system == "Darwin":
-        # macOS key codes: Page Down=121, Page Up=116, Home=115, End=119
-        mac_keycode = {"down": 121, "up": 116, "top": 115, "bottom": 119}
-        code = mac_keycode.get(direction, 121)
-        for _ in range(count):
+    lines=0 (default): page scroll (Page_Down/Page_Up)
+    lines=N: fine scroll by N lines using mouse wheel (3 lines ≈ 1 SKU row)
+    """
+    system = platform.system()
+
+    if direction in ("top", "bottom"):
+        # Home/End — always full page jump
+        if system == "Darwin":
+            code = {"top": 115, "bottom": 119}[direction]
             subprocess.run(["osascript", "-e",
-                f'tell application "System Events" to key code {code}'],
-                check=False)
-            time.sleep(0.5)
-    elif system == "Linux":
-        key = key_map.get(direction, "Page_Down")
-        for _ in range(count):
+                f'tell application "System Events" to key code {code}'], check=False)
+        elif system == "Linux":
+            key = {"top": "Home", "bottom": "End"}[direction]
             subprocess.run(["xdotool", "key", key], check=True)
-            time.sleep(0.5)
+        time.sleep(0.5)
+        return
+
+    if lines > 0:
+        # Fine scroll using mouse wheel
+        wheel_dir = 5 if direction == "down" else 4  # X11: 5=down, 4=up
+        for _ in range(count):
+            if system == "Darwin":
+                # AppleScript scroll: negative=down, positive=up
+                delta = -lines if direction == "down" else lines
+                subprocess.run(["osascript", "-e",
+                    f'tell application "System Events" to scroll area 1 by {delta}'],
+                    check=False)
+                # Fallback: use cliclick if available
+                try:
+                    scroll_arg = f"d:{lines}" if direction == "down" else f"u:{lines}"
+                    subprocess.run(["cliclick", f"w:{scroll_arg}"],
+                                   capture_output=True, check=True)
+                except (FileNotFoundError, subprocess.CalledProcessError):
+                    # AppleScript fallback: arrow keys
+                    key_code = 125 if direction == "down" else 126  # down/up arrow
+                    for _ in range(lines):
+                        subprocess.run(["osascript", "-e",
+                            f'tell application "System Events" to key code {key_code}'],
+                            check=False)
+                        time.sleep(0.05)
+            elif system == "Linux":
+                for _ in range(lines):
+                    subprocess.run(["xdotool", "click", str(wheel_dir)], check=True)
+                    time.sleep(0.05)
+            time.sleep(0.3)
+    else:
+        # Full page scroll
+        if system == "Darwin":
+            code = 121 if direction == "down" else 116
+            for _ in range(count):
+                subprocess.run(["osascript", "-e",
+                    f'tell application "System Events" to key code {code}'], check=False)
+                time.sleep(0.5)
+        elif system == "Linux":
+            key = "Page_Down" if direction == "down" else "Page_Up"
+            for _ in range(count):
+                subprocess.run(["xdotool", "key", key], check=True)
+                time.sleep(0.5)
 
 
 def annotate(output_prefix, json_path):
@@ -85,6 +124,8 @@ def main():
     ap = argparse.ArgumentParser(description="Scroll and optionally annotate")
     ap.add_argument("direction", choices=["down", "up", "top", "bottom"])
     ap.add_argument("-n", "--count", type=int, default=1, help="Number of scrolls")
+    ap.add_argument("-l", "--lines", type=int, default=0,
+                    help="Fine scroll by N lines (mouse wheel). 0=page scroll. 3≈one SKU row.")
     ap.add_argument("--annotate", "-a", action="store_true", help="Annotate after scrolling")
     ap.add_argument("--collect", "-c", action="store_true", help="Scroll N times, annotate each, merge results")
     ap.add_argument("--output", "-o", default="som_scrolled", help="Output prefix")
@@ -96,7 +137,7 @@ def main():
         temp_files = []
         for i in range(args.count):
             if i > 0:
-                scroll(args.direction, 1)
+                scroll(args.direction, 1, lines=args.lines)
                 time.sleep(1)
 
             temp_json = f"/tmp/som_viewport_{i}.json"
@@ -113,8 +154,9 @@ def main():
 
     else:
         # Simple scroll
-        scroll(args.direction, args.count)
-        print(f"Scrolled {args.direction} x{args.count}", file=sys.stderr)
+        scroll(args.direction, args.count, lines=args.lines)
+        mode = f"{args.lines} lines" if args.lines > 0 else "page"
+        print(f"Scrolled {args.direction} x{args.count} ({mode})", file=sys.stderr)
 
         if args.annotate:
             time.sleep(1)

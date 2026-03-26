@@ -15,7 +15,7 @@
 | `som-click` | 点击元素 | `som-click 42 -j page.json` |
 | `som-type` | 输入文字 | `som-type 42 "text" -j page.json` |
 | `som-tab` | 标签页切换 | `som-tab next` / `som-tab close` / `som-tab 2` |
-| `som-scroll` | 滚动页面 | `som-scroll down` / `som-scroll top` |
+| `som-scroll` | 滚动页面 | `som-scroll down` (整页) / `som-scroll down --lines 3` (精细) |
 
 环境变量（Linux 必须设置）：
 ```bash
@@ -76,6 +76,17 @@ som-tab prev  # 迷失了...
 echo -n "https://目标URL" | xclip -selection clipboard
 xdotool key ctrl+l && sleep 0.3 && xdotool key ctrl+v && sleep 0.3 && xdotool key Return
 ```
+
+## 滚动技巧
+
+```bash
+som-scroll down                # 整页翻（Page Down）
+som-scroll down --lines 3      # 精细滚 3 行（适合 SKU 区域，不会滚过头）
+som-scroll down --lines 5      # 约半屏
+som-scroll top                 # 回到页面顶部
+```
+
+**选 SKU 时用 `--lines 3`**，整页翻会把 SKU 下拉菜单滚出视口。
 
 ## 信息提取
 
