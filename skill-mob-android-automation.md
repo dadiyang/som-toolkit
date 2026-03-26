@@ -249,3 +249,30 @@ static    [71] desc="" text="我的"              ← 只是文字标签
 7. 返回搜索 → 滚动 → 第二个商品 → ¥1399, 包邮, 广州
 8. 个人中心：用户名/鱼力值/发布数/收藏/浏览/交易
 ```
+
+### 坑 14：WebView 搜索结果页的操作策略
+
+**场景**：闲鱼搜索结果在 WebView 里，uiautomator 完全读不到商品列表。agent 反复 mob-annotate + mob-find 都找不到商品。
+
+**正确策略**：WebView 页面不要用 mob-find 找元素。用坐标直接点击商品卡片区域。
+
+```bash
+# 搜索结果页布局固定：第一个商品卡片通常在 (180, 500) 或 (540, 500)
+mob-click --xy 180,500    # 左列第一个商品
+mob-click --xy 540,500    # 右列第一个商品
+```
+
+**如何判断是否在 WebView**：`mob-find --summary` 返回的 Clickable 数量 < 10 且没有商品相关文字 → WebView 盲区 → 改用坐标点击。
+
+### 坑 15：agent 在 WebView 盲区不知道切策略
+
+**场景**：技能文件写了 WebView 需要坐标点击，但 agent 在实际操作中仍然反复尝试 mob-find。
+
+**规则（写入 CLAUDE-android.md）**：
+
+```
+IF mob-find --summary 返回的有效文字 < 5 个
+THEN 当前页面是 WebView
+THEN 不要再 mob-find 找元素
+THEN 用 mob-click --xy 坐标直接点击
+```
