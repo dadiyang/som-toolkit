@@ -58,7 +58,9 @@ def take_screenshot(output_path, max_width=1920):
 
     system = platform.system()
     if system == "Darwin":
-        subprocess.run(["screencapture", "-x", raw_path], check=True)
+        # -m: main screen only (avoids multi-monitor merge)
+        # -x: no sound
+        subprocess.run(["screencapture", "-x", "-m", raw_path], check=True)
     elif system == "Linux":
         display = os.environ.get("DISPLAY")
         if not display:
@@ -118,7 +120,7 @@ def get_screen_size():
 
 
 # ─── OmniParser ────────────────────────────────────────
-def load_parser():
+def load_parser(use_caption=True):
     sys.path.insert(0, OMNI_DIR)
     os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
 
@@ -130,6 +132,7 @@ def load_parser():
         "caption_model_name": "florence2",
         "caption_model_path": os.path.join(weights_dir, "icon_caption_florence"),
         "BOX_TRESHOLD": 0.05,
+        "use_caption": use_caption,
     }
     return Omniparser(config)
 
@@ -228,6 +231,8 @@ def main():
     ap.add_argument("--screenshot", "-s", help="Use existing screenshot instead of capturing")
     ap.add_argument("--quiet", "-q", action="store_true", help="Minimal output")
     ap.add_argument("--wait", "-w", type=float, default=1.0, help="Wait seconds before screenshot (default 1.0)")
+    ap.add_argument("--no-caption", action="store_true",
+                    help="Skip icon caption (Florence-2). Much faster on CPU, loses icon descriptions but keeps coordinates and OCR.")
     args = ap.parse_args()
 
     screen_w, screen_h = get_screen_size()
@@ -253,7 +258,8 @@ def main():
         if not args.quiet:
             print("Loading OmniParser (no server, will be slow)...", file=sys.stderr)
             print("TIP: Run 'som-server start' to keep the model loaded.", file=sys.stderr)
-        parser = load_parser()
+        use_caption = not args.no_caption
+        parser = load_parser(use_caption=use_caption)
         if not args.quiet:
             print("Detecting elements...", file=sys.stderr)
         labeled_b64, elements = parse_screenshot(parser, raw_path, screen_w, screen_h)
@@ -279,7 +285,7 @@ def main():
 
     # Print element summary to stdout (for piping to agent)
     for e in elements:
-        content = e["content"].strip()
+        content = (e.get("content") or "").strip()
         if content:
             print(f'[{e["index"]}] ({e["center_x"]},{e["center_y"]}) {e["type"]} "{content}"')
 

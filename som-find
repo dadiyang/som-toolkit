@@ -24,7 +24,7 @@ def load_elements(json_path):
 
 def match_keyword(element, keyword):
     """Check if keyword matches element content (case-insensitive)."""
-    content = element.get("content", "").lower()
+    content = (element.get("content") or "").lower()
     return keyword.lower() in content
 
 
@@ -51,7 +51,7 @@ def match_area(element, area, screen_w=2880, screen_h=1800):
 
 def format_element(e):
     """Format element for display."""
-    content = e.get("content", "").strip()
+    content = (e.get("content") or "").strip()
     inter = "interactive" if e.get("interactivity") else "static"
     return f'[{e["index"]:3d}] ({e["center_x"]},{e["center_y"]}) {e["type"]} {inter} "{content}"'
 
@@ -70,7 +70,7 @@ def page_summary(elements):
     texts = []
 
     for e in elements:
-        c = e.get("content", "").strip()
+        c = (e.get("content") or "").strip()
         if not c:
             continue
         cl = c.lower()
@@ -90,22 +90,22 @@ def page_summary(elements):
     if prices:
         lines.append(f"\nPrices ({len(prices)}):")
         for e in prices:
-            lines.append(f'  [{e["index"]}] {e["content"].strip()}')
+            lines.append(f'  [{e["index"]}] {(e.get("content") or "").strip()}')
 
     if shipping:
         lines.append(f"\nShipping ({len(shipping)}):")
         for e in shipping:
-            lines.append(f'  [{e["index"]}] {e["content"].strip()}')
+            lines.append(f'  [{e["index"]}] {(e.get("content") or "").strip()}')
 
     if buttons:
         lines.append(f"\nButtons ({len(buttons)}):")
         for e in buttons[:15]:
-            lines.append(f'  [{e["index"]}] {e["content"].strip()}')
+            lines.append(f'  [{e["index"]}] {(e.get("content") or "").strip()}')
 
     if links:
         lines.append(f"\nClickable text ({len(links)}):")
         for e in links[:15]:
-            lines.append(f'  [{e["index"]}] {e["content"].strip()}')
+            lines.append(f'  [{e["index"]}] {(e.get("content") or "").strip()}')
 
     lines.append(f"\nTotal elements: {len(elements)} ({sum(1 for e in elements if e.get('interactivity'))} interactive)")
     return "\n".join(lines)
@@ -124,7 +124,7 @@ def extract_info(elements):
     }
 
     for e in elements:
-        c = e.get("content", "").strip()
+        c = (e.get("content") or "").strip()
         if not c:
             continue
         cl = c.lower()

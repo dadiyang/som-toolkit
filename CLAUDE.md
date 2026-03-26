@@ -8,7 +8,7 @@
 
 | 工具 | 作用 | 示例 |
 |------|------|------|
-| `som-annotate` | 截图+标注所有可交互元素 | `som-annotate -o page.jpg -j page.json -q --wait 2` |
+| `som-annotate` | 截图+标注所有可交互元素 | `som-annotate -o page.jpg -j page.json -q --wait 2 --no-caption` |
 | `som-find` | 按关键词搜索元素 | `som-find "Buy" --first --cmd -j page.json` |
 | `som-find --summary` | 页面概览 | `som-find --summary -j page.json` |
 | `som-find --extract` | 提取价格/运费/SKU | `som-find --extract -j page.json` |
@@ -94,7 +94,7 @@ som-find --extract -j scrolled.json
 你可以纯文本操作，不依赖多模态能力：
 
 ```bash
-som-annotate -o page.jpg -j page.json -q --wait 2   # 标注
+som-annotate -o page.jpg -j page.json -q --wait 2 --no-caption   # 标注
 som-find --summary -j page.json                       # 看页面有什么
 som-find "Buy" --first --cmd -j page.json            # 找按钮 → 输出 som-click 命令
 som-click 29 -j page.json                             # 执行点击
@@ -102,7 +102,8 @@ som-click 29 -j page.json                             # 执行点击
 
 ## 注意事项
 
-- `som-annotate` 耗时约 60 秒（CPU），耐心等待
+- `som-annotate --no-caption` 耗时约 8 秒（CPU），不加 `--no-caption` 约 60-80 秒
+- 默认使用 `--no-caption`（跳过 Florence-2 icon 描述），速度快 10 倍，不影响坐标精度和 OCR 文字
 - 中文 OCR 不准确，但不影响点击精度
 - 遇到登录页说明平台触发了反爬，需要用户手动登录后重试
 - 无法操作的元素（如空白输入框被漏检），用**已检测到的按钮做相对定位**

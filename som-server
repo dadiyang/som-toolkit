@@ -36,7 +36,7 @@ def find_omniparser():
     sys.exit("ERROR: OmniParser not found. Run install.sh first.")
 
 
-def start_server(port):
+def start_server(port, use_caption=True):
     from http.server import HTTPServer, BaseHTTPRequestHandler
 
     omni_dir = find_omniparser()
@@ -52,6 +52,7 @@ def start_server(port):
         "caption_model_name": "florence2",
         "caption_model_path": os.path.join(weights_dir, "icon_caption_florence"),
         "BOX_TRESHOLD": 0.05,
+        "use_caption": use_caption,
     }
 
     print("Loading OmniParser model...", flush=True)
@@ -163,6 +164,8 @@ def main():
     ap.add_argument("action", choices=["start", "stop", "status"])
     ap.add_argument("--port", type=int, default=DEFAULT_PORT)
     ap.add_argument("--foreground", "-f", action="store_true", help="Run in foreground")
+    ap.add_argument("--no-caption", action="store_true",
+                    help="Skip icon caption model. Much faster on CPU.")
     args = ap.parse_args()
 
     if args.action == "status":
@@ -213,7 +216,7 @@ def main():
             return 1
 
         if args.foreground:
-            start_server(args.port)
+            start_server(args.port, use_caption=not args.no_caption)
         else:
             # Daemonize
             child_pid = os.fork()
@@ -224,7 +227,7 @@ def main():
                 log_fd = open(log_path, "a")
                 os.dup2(log_fd.fileno(), sys.stdout.fileno())
                 os.dup2(log_fd.fileno(), sys.stderr.fileno())
-                start_server(args.port)
+                start_server(args.port, use_caption=not args.no_caption)
             else:
                 # Wait a moment for the server to initialize
                 print(f"Starting som-server (PID {child_pid})...")
