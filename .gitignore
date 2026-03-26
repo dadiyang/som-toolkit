@@ -20,3 +20,4 @@ som-server.log
 .DS_Store
 Thumbs.db
 mob_core.pyc
+__pycache__/
