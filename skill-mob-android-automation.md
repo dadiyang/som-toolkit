@@ -168,3 +168,23 @@ for _, text, conf in reader.readtext('/tmp/mob_raw_screenshot.png'):
 # 4. 返回
 mob-type --key BACK
 ```
+
+### 坑 8：知乎回答页是 WebView
+
+**场景**：知乎问题列表（首页 Feed）是原生 RecyclerView，uiautomator 覆盖率高。但进入问题详情后，回答内容在 WebView 里。
+
+**规则**：知乎首页操作用 mob-find，回答内容提取用 OCR。
+
+### 坑 9：各 App 的点赞按钮 resource_id 不同
+
+**场景**：微博点赞是 `rightButton`，知乎不是。
+
+**规则**：不要假设 resource_id 跨 App 通用。每次操作新 App 时，先 `mob-annotate` 查看元素结构。
+
+**已知布局**：
+
+| App | 点赞 resource_id | 评论 | 转发/分享 |
+|-----|-----------------|------|---------|
+| 微博 | rightButton | midButton | leftButton |
+| 知乎 | 待确认（WebView 区域） | - | - |
+| 闲鱼 | WebView 区域 | - | - |
