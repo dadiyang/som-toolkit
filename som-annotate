@@ -66,8 +66,6 @@ def take_screenshot(output_path):
     # Verify screenshot was actually created
     if not os.path.exists(output_path):
         sys.exit(f"ERROR: Screenshot failed. File not created: {output_path}")
-    else:
-        raise RuntimeError(f"Unsupported platform: {system}")
 
 
 def get_screen_size():
