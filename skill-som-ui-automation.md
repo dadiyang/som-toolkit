@@ -353,6 +353,28 @@ price_elements = [e for e in elements if '$' in e.get('content', '')]
 - 桌面应用 UI 自动化测试
 - 任何需要"像真人一样操作"的场景
 
+## 实战培训验证记录（Qwen3.5-35B 独立完成）
+
+以下流程已由 35B 小模型独立完成验证，无人工干预：
+
+```
+eBay "usb c hub" → 搜索结果页（142元素）→ som-find "hub" 找到商品 [89]
+→ som-click 89 → som-tab next → som-annotate 新页面
+→ som-find --extract 提取价格 $12.59 → som-click Buy It Now → 弹出购买确认
+```
+
+### 训练中发现的常见错误及应对
+
+1. **som-tab next 跳到错误标签**：多标签时 next 不一定是最新的。用 `som-tab last`（Ctrl+9）或 `som-tab N`（Ctrl+N 指定第 N 个）更可靠
+
+2. **标注后发现页面不对**：不要慌，再 `som-tab` 切换标签重试。agent 需要看 `som-find --summary` 的内容判断当前是不是目标页面
+
+3. **搜索 "speaker" 但 OmniParser OCR 没识别出来**：换更短或更通用的关键词（如 "hub" 代替 "usb c hub"），或直接用 `som-find --summary` 看 Prices 区有什么
+
+4. **运费信息在视口外**：价格在页面上方，运费通常在中下方。用 `som-scroll down` 滚动后再 `som-annotate` 提取
+
+5. **无 SKU 选项的商品**：直接跳过 SKU 步骤，点 Buy It Now 即可。用 `som-find --extract` 检查 sku_options 是否为空来判断
+
 ## 不适用场景
 
 - 高频操作（每次标注 ~170 秒 CPU / ~5 秒 GPU，不适合毫秒级自动化）
