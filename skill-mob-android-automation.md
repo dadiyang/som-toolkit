@@ -39,14 +39,17 @@ mob-annotate → mob-find 找目标 → mob-click 操作 → mob-annotate 验证
 
 ## 各 App uiautomator 覆盖率（实测）
 
-| App/页面 | 渲染引擎 | uiautomator 可读 | 验证方法 |
-|---------|---------|-----------------|---------|
-| **微博 Feed** | 原生 | ✅ 帖子全文、互动数据 | WebView=0, resource_id=com.sina.weibo |
-| **知乎 Feed** | 原生 | ✅ 问题标题、回答预览 | WebView=0, resource_id=com.zhihu.android |
-| **小红书首页** | 原生 | ✅ 笔记标题、用户名、互动数 | WebView=0, resource_id=com.xingin.xhs |
-| **闲鱼首页** | Flutter 混合 | ✅ 导航标签、商品标题、价格 | resource_id=com.taobao.idlefish |
-| **闲鱼搜索结果** | Flutter 混合 | ✅ 价格、描述、卖家地区 | resource_id=com.taobao.idlefish |
-| **闲鱼商品详情** | **纯 Flutter** | **❌ 完全不可读** | resource_id 穿透到底层 App |
+| App/页面 | Flutter | resource_id 归属正确 | 数据可信 | 验证方法 |
+|---------|---------|-------------------|---------|---------|
+| 微博 Feed | 否 | ✅ | ✅ | WebView=0 |
+| 知乎 Feed | 混合 | ✅ com.zhihu.android | ✅ (29 文字) | resource_id 检查 |
+| 知乎详情 | 混合 | ✅ com.zhihu.android | ✅ (48 元素) | resource_id 检查 |
+| 小红书 Feed | 混合 | ✅ com.xingin.xhs | ✅ (21 文字) | resource_id 检查 |
+| 小红书详情 | 混合 | ✅ com.xingin.xhs | ✅ (笔记可读) | resource_id 检查 |
+| 闲鱼首页 | 混合 | ✅ com.taobao.idlefish | ✅ (38 文字) | resource_id 检查 |
+| 闲鱼搜索 | 混合 | ✅ com.taobao.idlefish | ✅ (43 文字) | resource_id 检查 |
+| 闲鱼详情（个人）| 混合 | ✅ com.taobao.idlefish | ✅ (22 文字) | resource_id 检查 |
+| **闲鱼详情（店铺）** | **纯** | **❌ 穿透到底层 App** | **❌** | resource_id ≠ 当前 App |
 
 ### 闲鱼 Flutter 详情页的陷阱（最重要的发现）
 
