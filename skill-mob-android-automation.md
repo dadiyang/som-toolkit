@@ -317,3 +317,36 @@ else: print('Native page → use mob-find normally')
 | 首页 Feed | 混合 | 待确认 | ~40% |
 | 商品详情（个人闲置） | 原生 | 待确认 | 高（价格/运费/SKU 全可读） |
 | 商品详情（店铺/验货宝） | WebView | 待确认 | 极低（~5%） |
+
+## 各 App 交互按钮映射表（教练独立验证）
+
+### 微博
+- **点赞**：`mob-click --id "rightButton"`
+- **评论**：`mob-click --id "midButton"`
+- **转发**：`mob-click --id "leftButton"`
+- 按钮文字（"喜欢"）是 static 元素，不是 clickable
+
+### 知乎
+- **赞同**：`mob-click --text "赞同"`（匹配 content_desc "赞同6372"）
+- **收藏**：`mob-click --text "收藏"`（匹配 content_desc "收藏839"）
+- **评论**：`mob-click --text "评论"`
+- 互动按钮只在详情页有，Feed 页没有
+
+### 小红书
+- **点赞**：用编号点击（按钮 text 是混淆名 "0_resource_name_obfuscated"）
+- **收藏**：`mob-click --text "收藏"`（content_desc "收藏0"）
+- **关注**：`mob-click --text "关注"`
+- **注意**：点赞可能弹出评论框，遮挡其他按钮
+
+### 闲鱼
+- **收藏**：`mob-click --text "收藏"`（content_desc "收藏按钮"）
+- **购买**：`mob-click --text "立即购买"`（content_desc "立即购买按钮"）
+- **聊天**：`mob-click --text "聊一聊"`（content_desc "聊一聊按钮"）
+- 只在商品详情页有
+
+### 通用规律
+- 微博用 resource_id（leftButton/midButton/rightButton）
+- 知乎用 content_desc 带互动数字（"赞同6372"）
+- 小红书按钮名被混淆，需要用编号或 content_desc
+- 闲鱼用 content_desc（"收藏按钮"）
+- **没有统一标准**——每个 App 不同，但 `mob-click --text` 通过 7 级回退都能覆盖
