@@ -21,3 +21,4 @@ som-server.log
 Thumbs.db
 mob_core.pyc
 __pycache__/
+.next-session-prompt

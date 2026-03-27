@@ -115,6 +115,71 @@ som-click 29 -j page.json                             # 执行点击
 
 - `som-annotate --no-caption` 耗时约 8 秒（CPU），不加 `--no-caption` 约 60-80 秒
 - 默认使用 `--no-caption`（跳过 Florence-2 icon 描述），速度快 10 倍，不影响坐标精度和 OCR 文字
-- 中文 OCR 不准确，但不影响点击精度
+- 中文 OCR 已启用（easyocr ch_sim+en），中文识别准确
 - 遇到登录页说明平台触发了反爬，需要用户手动登录后重试
 - 无法操作的元素（如空白输入框被漏检），用**已检测到的按钮做相对定位**
+
+---
+
+## Android 手机工具
+
+通过 ADB 截图 + OmniParser 检测 + ADB 动作执行，操作 Android 手机上的 App。检测层复用桌面端 som-server。
+
+### 前置条件
+
+- 手机通过 USB 连接，`adb devices` 可见
+- som-server 已启动（`python3 som-server start --no-caption`）
+- 中文输入需要 ADB Keyboard（`adb shell ime set com.android.adbkeyboard/.AdbIME`）
+
+环境变量：
+```bash
+export PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK=True
+export CUDA_VISIBLE_DEVICES=""  # CPU 模式
+# 多设备时指定：export ADB_SERIAL=<serial>
+```
+
+### 工具列表
+
+| 工具 | 作用 | 示例 |
+|------|------|------|
+| `som-android-annotate` | 截图+标注手机屏幕 | `som-android-annotate -o page.jpg -j page.json -q` |
+| `som-android-find` | 按关键词搜索元素 | `som-android-find "购买" -j page.json` |
+| `som-android-click` | 点击/长按/双击 | `som-android-click 42 -j page.json` |
+| `som-android-type` | 文字输入 | `som-android-type 42 "你好" -j page.json` |
+| `som-android-scroll` | 滑动（含横向） | `som-android-scroll down` / `som-android-scroll left` |
+| `som-android-key` | Android 按键 | `som-android-key back` / `som-android-key home` |
+| `som-android-app` | 启动/切换 App | `som-android-app xianyu` |
+
+### 操作循环（和桌面端一致）
+
+```
+som-android-annotate → som-android-find 找目标 → som-android-click 操作 → som-android-annotate 验证
+```
+
+**绝对规则：**
+1. **每次操作后必须重新 annotate** — 元素编号在任何页面变化后全部失效
+2. **中文输入必须先切换到 ADB Keyboard** — `adb shell ime set com.android.adbkeyboard/.AdbIME`，用完恢复原输入法
+3. **App 内搜索框可能不是标准输入控件** — 闲鱼等 App 首页搜索栏是轮播展示组件，不接受直接键盘输入。通过点击历史搜索标签或在搜索结果页修改关键词来绕过
+
+### --caption 使用策略
+
+默认关闭 Florence-2 icon 描述（~8s），手机端纯图标较多（汉堡菜单、底部 tab bar），但大部分有文字标签。
+
+- **首次进入陌生 App**：用 `--caption` 做完整分析（~60-80s），了解页面布局
+- **后续操作**：用默认快速模式，通过文字搜索和位置推断识别元素
+
+### App 别名
+
+```bash
+som-android-app xianyu    # 闲鱼
+som-android-app xhs        # 小红书
+som-android-app weibo      # 微博
+som-android-app zhihu      # 知乎
+som-android-app --list     # 查看全部别名
+```
+
+### 已知限制
+
+- **闲鱼首页搜索栏不可直接编辑**：是自定义轮播组件，点击不弹出键盘。需通过历史搜索标签跳转，或在搜索结果页修改关键词
+- **som-android-type --clear 在自定义输入框不可靠**：keycombination 全选在部分 App 不生效，退格键逐字删除是 fallback
+- **OmniParser 偶尔漏检搜索栏**：半透明/动态轮播区域可能不被检测为独立元素，用 `--xy` 直接坐标点击绕过
