@@ -8,14 +8,11 @@ mob-core: Android 操控核心模块
 设计参考 mobile-use 的 3 级回退策略：bounds → resource_id → text。
 """
 import json
-import os
 import re
 import subprocess
-import sys
 import time
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
 
 
 def _run_adb(*args, timeout=30):
@@ -69,7 +66,13 @@ class MobElement:
     @property
     def label(self):
         """Best human-readable label for this element."""
-        return self.text or self.content_desc or self.resource_id.split("/")[-1] if self.resource_id else ""
+        if self.text:
+            return self.text
+        if self.content_desc:
+            return self.content_desc
+        if self.resource_id:
+            return self.resource_id.split("/")[-1]
+        return ""
 
     def to_dict(self):
         return {
@@ -105,9 +108,18 @@ def dump_ui_tree(output_json=None):
 
     Returns list of MobElement sorted by position (top-to-bottom, left-to-right).
     """
-    # Dump to device, pull to local
-    _run_adb("shell", "uiautomator", "dump", "/sdcard/ui_dump.xml")
-    xml_data = _run_adb_bytes("shell", "cat", "/sdcard/ui_dump.xml")
+    # Try direct pipe first (faster, no device write), fallback to file
+    try:
+        xml_data = _run_adb_bytes("exec-out", "uiautomator", "dump", "/dev/tty")
+        # Strip trailing "UI hierchary dumped to: /dev/tty" noise
+        end_tag = b"</hierarchy>"
+        end_pos = xml_data.rfind(end_tag)
+        if end_pos >= 0:
+            xml_data = xml_data[:end_pos + len(end_tag)]
+    except RuntimeError:
+        # Fallback: dump to file then read (works on all Android versions)
+        _run_adb("shell", "uiautomator", "dump", "/sdcard/ui_dump.xml")
+        xml_data = _run_adb_bytes("shell", "cat", "/sdcard/ui_dump.xml")
 
     root = ET.fromstring(xml_data)
     elements = []
@@ -215,21 +227,35 @@ def scroll_up(amount=500):
 
 
 def input_text(text):
-    """Input text via ADB. For CJK, uses ADB Keyboard (if installed) or clipboard."""
-    # Check if text is ASCII
+    """Input text via ADB.
+
+    Strategy:
+    1. ASCII: use 'input text' directly (reliable)
+    2. Non-ASCII (CJK): use ADB Keyboard broadcast (requires com.android.adbkeyboard)
+    3. Fallback: set clipboard + paste
+    """
     if all(ord(c) < 128 for c in text):
-        # Escape special chars for shell
-        escaped = text.replace(" ", "%s").replace("'", "\\'").replace('"', '\\"')
+        # ASCII: escape shell special chars
+        # ADB input text uses %s for space, but % itself needs no escape in this context
+        escaped = text.replace(" ", "%s").replace("&", "\\&").replace(";", "\\;")
+        escaped = escaped.replace("(", "\\(").replace(")", "\\)")
+        escaped = escaped.replace("'", "\\'").replace('"', '\\"')
         _run_adb("shell", "input", "text", escaped)
     else:
-        # CJK/Unicode: use ADB Keyboard broadcast if available
+        # CJK: try ADB Keyboard broadcast first
         try:
+            # Quote the text to prevent shell splitting
             _run_adb("shell", "am", "broadcast",
                      "-a", "ADB_INPUT_TEXT",
-                     "--es", "msg", text)
+                     "--es", "msg", f"'{text}'")
         except RuntimeError:
-            # Fallback: clipboard method
-            _run_adb("shell", "input", "text", text.encode("unicode_escape").decode())
+            # Fallback: clipboard paste
+            # Set clipboard via am broadcast
+            _run_adb("shell", "am", "broadcast",
+                     "-a", "clipper.set",
+                     "--es", "text", f"'{text}'")
+            time.sleep(0.2)
+            _run_adb("shell", "input", "keyevent", "279")  # KEYCODE_PASTE
 
 
 def press_key(keycode):
@@ -256,13 +282,20 @@ def press_enter():
 
 # ─── Screen Info ──────────────────────────────────────
 
+_screen_size_cache = None
+
+
 def get_screen_size():
-    """Get physical screen size (width, height)."""
-    out = _run_adb("shell", "wm", "size")
-    match = re.search(r"(\d+)x(\d+)", out)
-    if match:
-        return (int(match.group(1)), int(match.group(2)))
-    return (1080, 2400)  # Common default
+    """Get physical screen size (width, height). Cached after first call."""
+    global _screen_size_cache
+    if _screen_size_cache is None:
+        out = _run_adb("shell", "wm", "size")
+        match = re.search(r"(\d+)x(\d+)", out)
+        if match:
+            _screen_size_cache = (int(match.group(1)), int(match.group(2)))
+        else:
+            _screen_size_cache = (1080, 2400)
+    return _screen_size_cache
 
 
 def get_current_app():
