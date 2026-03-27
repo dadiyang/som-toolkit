@@ -39,24 +39,40 @@ mob-annotate → mob-find 找目标 → mob-click 操作 → mob-annotate 验证
 
 ## 各 App uiautomator 覆盖率（实测）
 
-| App/页面 | WebView 元素数 | 有效文字 | 能读到什么 |
-|---------|---------------|---------|-----------|
-| **微博 Feed** | 0 | 30+ | 帖子全文、互动数据（转发/评论/赞） |
-| **知乎 Feed** | 0 | 20+ | 问题标题、回答预览、互动数据 |
-| **闲鱼首页 Feed** | **0** | 33 | 导航标签、商品标题、价格 |
-| **闲鱼搜索结果** | **0** | 33-35 | 价格、描述、卖家地区、筛选项 |
-| **闲鱼详情（个人）** | **0** | 36 | 价格、运费、卖家、SKU 全部可读 |
-| **闲鱼详情（验货宝）** | **2** | 19 | 价格、原价、想要人数、购买按钮 |
-| **小红书首页** | **0** | 22 | 标签、推荐内容 |
+| App/页面 | 渲染引擎 | uiautomator 可读 | 验证方法 |
+|---------|---------|-----------------|---------|
+| **微博 Feed** | 原生 | ✅ 帖子全文、互动数据 | WebView=0, resource_id=com.sina.weibo |
+| **知乎 Feed** | 原生 | ✅ 问题标题、回答预览 | WebView=0, resource_id=com.zhihu.android |
+| **小红书首页** | 原生 | ✅ 笔记标题、用户名、互动数 | WebView=0, resource_id=com.xingin.xhs |
+| **闲鱼首页** | Flutter 混合 | ✅ 导航标签、商品标题、价格 | resource_id=com.taobao.idlefish |
+| **闲鱼搜索结果** | Flutter 混合 | ✅ 价格、描述、卖家地区 | resource_id=com.taobao.idlefish |
+| **闲鱼商品详情** | **纯 Flutter** | **❌ 完全不可读** | resource_id 穿透到底层 App |
 
-**验证方法**：通过 `class_name` 字段检查是否含 `android.webkit.WebView`，而非靠元素数量推断。
+### 闲鱼 Flutter 详情页的陷阱（最重要的发现）
 
-**之前"5% 覆盖率"结论是错误的**——原因是 App 刚启动/页面未加载完时测的，或 agent 实际不在目标页面上。
+**症状**：`mob-annotate` 在闲鱼详情页返回的元素看起来像小红书内容（用户昵称、推荐数）。
 
-**修正后的规律**：
-- 所有测试的中国 App（微博/知乎/闲鱼/小红书）首页和列表页都是**原生渲染**
-- 只有闲鱼验货宝商品详情有少量 WebView 元素，但核心信息（价格/按钮）仍是原生可读
-- **不需要 OCR 兜底**的场景比预想的多得多
+**根因**：闲鱼详情页用 **纯 Flutter（io.flutter.embedding）** 渲染。Flutter 有独立渲染管线（Skia），不走 Android View 系统。uiautomator 穿透 Flutter 层，dump 到了底层的其他 Activity 的 View 树。
+
+**验证**：
+```bash
+# 检查当前页面是否用 Flutter
+adb shell dumpsys activity top | grep "flutter"
+# 如果看到 FlutterPageFragmentWrapper / DartMessenger → Flutter 渲染
+
+# 检查 uiautomator dump 的 resource_id 归属
+python3 -c "
+import json
+d = json.load(open('page.json'))
+pkgs = set(e.get('resource_id','').split(':id/')[0] for e in d if ':id/' in e.get('resource_id',''))
+print(f'Packages: {pkgs}')
+# 如果包名不是当前 App → uiautomator 穿透了，数据不可信
+"
+```
+
+**对闲鱼详情页的操作策略**：uiautomator 数据完全不可信，必须用截图 + OCR 或坐标点击。
+
+**注意**：闲鱼首页和搜索页虽然也有 Flutter Fragment，但采用**混合渲染**——部分 UI 仍通过原生 View 暴露，uiautomator 可以读到。只有详情页是纯 Flutter。
 
 ## 实战踩坑记录
 
