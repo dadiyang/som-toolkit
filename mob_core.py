@@ -109,14 +109,18 @@ def dump_ui_tree(output_json=None):
     Returns list of MobElement sorted by position (top-to-bottom, left-to-right).
     """
     # Try direct pipe first (faster, no device write), fallback to file
+    xml_data = None
     try:
-        xml_data = _run_adb_bytes("exec-out", "uiautomator", "dump", "/dev/tty")
+        raw = _run_adb_bytes("exec-out", "uiautomator", "dump", "/dev/tty")
         # Strip trailing "UI hierchary dumped to: /dev/tty" noise
         end_tag = b"</hierarchy>"
-        end_pos = xml_data.rfind(end_tag)
+        end_pos = raw.rfind(end_tag)
         if end_pos >= 0:
-            xml_data = xml_data[:end_pos + len(end_tag)]
+            xml_data = raw[:end_pos + len(end_tag)]
     except RuntimeError:
+        pass
+
+    if not xml_data or b"<hierarchy" not in xml_data:
         # Fallback: dump to file then read (works on all Android versions)
         _run_adb("shell", "uiautomator", "dump", "/sdcard/ui_dump.xml")
         xml_data = _run_adb_bytes("shell", "cat", "/sdcard/ui_dump.xml")

@@ -39,19 +39,24 @@ mob-annotate → mob-find 找目标 → mob-click 操作 → mob-annotate 验证
 
 ## 各 App uiautomator 覆盖率（实测）
 
-| App | 渲染方式 | uiautomator 覆盖 | 能读到什么 | 读不到什么 |
-|-----|---------|-----------------|-----------|-----------|
-| **微博** | **原生 RecyclerView** | **高 (70%+)** | 帖子全文、互动数据、导航 | 图片内容 |
-| **知乎** | **原生 RecyclerView** | **高 (70%+)** | 问题标题、回答预览、互动数据 | 图片内容 |
-| **闲鱼首页** | 混合 | 中 (41%) | 导航标签、部分Feed标题 | 商品图、部分价格 |
-| **闲鱼详情** | **WebView** | **极低 (5%)** | 导航栏 | 标题、价格、运费、卖家 |
-| **小红书** | **WebView** | **极低 (5%)** | 底部Tab | 笔记内容、图片、互动数据 |
-| **拼多多** | 未测 | - | - | - |
+| App/页面 | WebView 元素数 | 有效文字 | 能读到什么 |
+|---------|---------------|---------|-----------|
+| **微博 Feed** | 0 | 30+ | 帖子全文、互动数据（转发/评论/赞） |
+| **知乎 Feed** | 0 | 20+ | 问题标题、回答预览、互动数据 |
+| **闲鱼首页 Feed** | **0** | 33 | 导航标签、商品标题、价格 |
+| **闲鱼搜索结果** | **0** | 33-35 | 价格、描述、卖家地区、筛选项 |
+| **闲鱼详情（个人）** | **0** | 36 | 价格、运费、卖家、SKU 全部可读 |
+| **闲鱼详情（验货宝）** | **2** | 19 | 价格、原价、想要人数、购买按钮 |
+| **小红书首页** | **0** | 22 | 标签、推荐内容 |
 
-**规律**：
-- 微博、知乎用原生控件 → uiautomator 几乎全覆盖，是最适合纯结构化操控的 App
-- 闲鱼、小红书用 WebView → 必须 OCR 补充，或用 deeplink 绕过搜索
-- 导航栏、底部 Tab 所有 App 都是原生 → uiautomator 可靠定位
+**验证方法**：通过 `class_name` 字段检查是否含 `android.webkit.WebView`，而非靠元素数量推断。
+
+**之前"5% 覆盖率"结论是错误的**——原因是 App 刚启动/页面未加载完时测的，或 agent 实际不在目标页面上。
+
+**修正后的规律**：
+- 所有测试的中国 App（微博/知乎/闲鱼/小红书）首页和列表页都是**原生渲染**
+- 只有闲鱼验货宝商品详情有少量 WebView 元素，但核心信息（价格/按钮）仍是原生可读
+- **不需要 OCR 兜底**的场景比预想的多得多
 
 ## 实战踩坑记录
 
@@ -250,51 +255,46 @@ static    [71] desc="" text="我的"              ← 只是文字标签
 8. 个人中心：用户名/鱼力值/发布数/收藏/浏览/交易
 ```
 
-### 坑 14：页面加载不充分导致误判为 WebView
+### 坑 14：错误归因——agent 操作失败不等于 WebView
 
-**场景**：deeplink 打开闲鱼搜索后 `sleep 5` 就 `mob-annotate`，拿到的元素很少（看起来像 WebView）。增加到 `sleep 8` 后，同样的页面能拿到 34-35 个有效文字。
+**场景**：agent 用 deeplink 搜索闲鱼，但执行失败，停留在 MIUI 系统搜索页。agent 报告"闲鱼搜索结果是 WebView 读不到"，实际它从未到达闲鱼搜索结果页。
 
-**A/B 验证数据**（两组搜索词，结果一致）：
-
-| 搜索 | 总元素 | 有效文字 | 价格数值 |
-|------|--------|---------|---------|
-| iPhone16（8秒等待） | 106 | 34 | 3 |
-| 二手iPad（8秒等待） | 76 | 35 | 3 |
-
-**规则**：deeplink 搜索后 `sleep 8` 再 `mob-annotate`。不要因为第一次 dump 结果少就断定是 WebView。
-
-**教训**：不要轻易下"全是 WebView"的结论。先确认页面是否完全加载。
-
-### 坑 15：agent 在真正的 WebView 页面不知道切策略
-
-**场景**：在确认是 WebView 的页面（如闲鱼店铺商品详情），agent 反复 mob-find 找不到任何内容。
-
-**判断标准**：页面加载充分（等了 8 秒以上）后，`mob-find --summary` 有效文字仍然 < 5 个 → 确认是 WebView → 改用坐标或 OCR。
-
-**规则**：
-```
-等待 8 秒后 mob-annotate
-IF 有效文字 < 5 个（排除导航栏和资源 ID）
-THEN 确认是 WebView → 用 mob-click --xy 坐标直接点击
-ELSE 正常使用 mob-find
+**验证方法**（事后用 class_name 确认）：
+```python
+# 检查 UI 树中是否有 WebView 元素
+webview = [e for e in elements if 'WebView' in e.get('class_name', '')]
+native = [e for e in elements if 'RecyclerView' in e.get('class_name', '')]
+# 闲鱼搜索结果：WebView=0, RecyclerView=3 → 原生渲染
 ```
 
-### 闲鱼各页面渲染方式（验证后修正版）
+**教训**：
+1. 不要把 agent 的操作失败当成平台特性——先确认 agent 是否在正确的页面
+2. 判断 WebView 要看 `class_name` 字段，不要靠"元素少"来猜
+3. 页面 3 秒和 8 秒元素数量一样（都是 33 个有效文字）——不是加载时间问题
 
-| 页面 | 渲染 | uiautomator 覆盖 | 等待时间 |
-|------|------|-----------------|---------|
-| 首页 Feed | 混合 | ~40% | 5 秒 |
-| 搜索结果列表 | **混合（非 WebView）** | ~40%（价格/描述/地区可读） | **8 秒** |
-| 搜索建议页 | 原生 | 高（所有建议可 clickable） | 3 秒 |
-| 商品详情（个人闲置） | 原生 | 高（价格/运费/SKU 全可读） | 5 秒 |
-| 商品详情（店铺/验货宝） | WebView | 极低（~5%） | - |
+### 坑 15：判断 WebView 的可靠方法
 
-**搜索路径**：
+**不要用**：元素数量少 → 推断是 WebView（不可靠，可能是别的原因）
+
+**要用**：检查 UI 树中是否存在 `android.webkit.WebView` 类名的元素
 ```bash
-# 方案A：deeplink + 充分等待
-adb shell am start -a android.intent.action.VIEW -d "fleamarket://searchresult?keyword=关键词"
-sleep 8
-
-# 方案B：搜索建议页（原生可点击）
-# 点击搜索栏 → 等搜索建议加载 → mob-click --text "关键词"
+mob-annotate -j page.json --no-screenshot
+python3 -c "
+import json
+d = json.load(open('page.json'))
+wv = [e for e in d if 'WebView' in e.get('class_name','')]
+print(f'WebView elements: {len(wv)}')
+if wv: print('This is a WebView page → use OCR or coordinates')
+else: print('Native page → use mob-find normally')
+"
 ```
+
+### 闲鱼各页面渲染方式（class_name 验证版）
+
+| 页面 | 渲染 | WebView 元素数 | uiautomator 覆盖 |
+|------|------|---------------|-----------------|
+| 搜索结果列表 | **原生 RecyclerView** | **0** | ~40%（价格/描述/地区可读） |
+| 搜索建议页 | 原生 | 0 | 高（所有建议可 clickable） |
+| 首页 Feed | 混合 | 待确认 | ~40% |
+| 商品详情（个人闲置） | 原生 | 待确认 | 高（价格/运费/SKU 全可读） |
+| 商品详情（店铺/验货宝） | WebView | 待确认 | 极低（~5%） |
