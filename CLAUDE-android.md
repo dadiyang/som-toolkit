@@ -66,34 +66,49 @@ adb shell am start -a android.intent.action.VIEW -d "fleamarket://searchresult?k
 adb shell am start -a android.intent.action.VIEW -d "taobao://s.taobao.com/search?q=关键词"
 ```
 
-## 微博操作指南（uiautomator 高覆盖）
+## 如何找到交互按钮（通用方法）
 
-**按钮布局**：`leftButton=转发`、`midButton=评论`、`rightButton=点赞`。
-
-按钮文字和 clickable 元素是**分离的**——"喜欢"是 static 文字，实际 clickable 是 `leftButton/midButton/rightButton`。
+**不要假设按钮名称——每个 App 不同。用 mob-annotate 自己发现。**
 
 ```bash
-# 点赞
-mob-click --id "rightButton"
+# 1. 进入详情页后 mob-annotate
+mob-annotate -j page.json --no-screenshot -q
 
-# 转发
-mob-click --id "leftButton"
+# 2. 查找交互按钮（看 clickable + content_desc 或 resource_id）
+python3 -c "
+import json
+d = json.load(open('page.json'))
+elems = d.get('elements', d) if isinstance(d, dict) else d
+for e in elems:
+    if e.get('clickable'):
+        desc = e.get('content_desc','')
+        rid = e.get('resource_id','').split('/')[-1]
+        text = e.get('text','')
+        if any(k in (desc+text+rid) for k in ['赞','like','收藏','关注','评论','分享','购买','buy']):
+            print(f'[{e[\"index\"]}] desc=\"{desc}\" rid={rid} text=\"{text}\"')
+"
 
-# 评论
-mob-click --id "midButton"
+# 3. 根据发现的按钮名点击
+mob-click <编号> -j page.json
 ```
 
-**养号浏览**：
-```bash
-# 1. 切到推荐
-mob-click --text "推荐"
+**常见模式**：
+- 有些 App 按钮名在 `text` 里
+- 有些在 `content_desc` 里（中国 App 常见）
+- 有些在 `resource_id` 里
+- `mob-click --text "关键词"` 会自动搜索所有三个字段
 
-# 2. 滑动浏览（拟人速度，随机停留）
+**养号浏览通用流程**：
+```bash
+# 1. 启动 App
+adb shell monkey -p <package> -c android.intent.category.LAUNCHER 1
+sleep 5
+
+# 2. 滑动浏览
 mob-scroll down --pixels 400 --slow
 sleep 3-8  # 随机
 
-# 3. 偶尔点赞
-mob-click --id "rightButton"
+# 3. 找到点赞按钮（自己用 mob-annotate 发现，不要硬编码按钮名）
 ```
 
 ## 弹窗处理

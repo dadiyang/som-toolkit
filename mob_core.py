@@ -121,7 +121,9 @@ def dump_ui_tree(output_json=None):
         pass
 
     if not xml_data or b"<hierarchy" not in xml_data:
-        # Fallback: dump to file then read (works on all Android versions)
+        # Fallback: dump to file then read
+        # First delete old file to prevent stale data
+        _run_adb("shell", "rm", "-f", "/sdcard/ui_dump.xml")
         _run_adb("shell", "uiautomator", "dump", "/sdcard/ui_dump.xml")
         xml_data = _run_adb_bytes("shell", "cat", "/sdcard/ui_dump.xml")
 
