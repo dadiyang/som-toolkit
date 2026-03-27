@@ -51,7 +51,7 @@ def get_current_app():
         if "realActivity=" in line:
             # Extract package/activity from realActivity=com.foo/.BarActivity
             part = line.split("realActivity=")[1].split()[0]
-            package = part.split("/")[0]
+            package = part.split("/")[0].lstrip("{")
             return package
     return "unknown"
 
@@ -83,8 +83,8 @@ def main():
     # Launch via monkey (most reliable, doesn't need activity name)
     result = adb("shell", "monkey", "-p", package,
                  "-c", "android.intent.category.LAUNCHER", "1")
-    if "No activities found" in result.stdout:
-        print(f"ERROR: App not installed or no launcher activity: {package}", file=sys.stderr)
+    if result.returncode != 0 or "No activities found" in result.stdout:
+        print(f"ERROR: Failed to launch {package}: {result.stdout.strip()}", file=sys.stderr)
         return 1
 
     print(f"Launched: {package}")

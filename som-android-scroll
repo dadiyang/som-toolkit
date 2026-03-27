@@ -39,7 +39,11 @@ def adb(*args):
 def get_screen_size():
     result = subprocess.run(["adb"] + get_device() + ["shell", "wm", "size"],
                             capture_output=True, text=True, check=True)
-    # "Physical size: 720x1640"
+    for line in result.stdout.strip().split("\n"):
+        if "Physical size:" in line:
+            parts = line.split()[-1].split("x")
+            return int(parts[0]), int(parts[1])
+    # Fallback: last line
     parts = result.stdout.strip().split()[-1].split("x")
     return int(parts[0]), int(parts[1])
 
@@ -76,14 +80,23 @@ def main():
                 # Full page: swipe 50% of screen dimension
                 pixels = h // 2 if args.direction in ("down", "up") else w // 2
 
+            # Clamp coordinates to screen bounds
             if args.direction == "down":
-                swipe(cx, int(h * 0.65), cx, int(h * 0.65) - pixels, 300)
+                y_start = int(h * 0.65)
+                y_end = max(0, y_start - pixels)
+                swipe(cx, y_start, cx, y_end, 300)
             elif args.direction == "up":
-                swipe(cx, int(h * 0.35), cx, int(h * 0.35) + pixels, 300)
+                y_start = int(h * 0.35)
+                y_end = min(h, y_start + pixels)
+                swipe(cx, y_start, cx, y_end, 300)
             elif args.direction == "left":
-                swipe(int(w * 0.65), cy, int(w * 0.65) - pixels, cy, 300)
+                x_start = int(w * 0.65)
+                x_end = max(0, x_start - pixels)
+                swipe(x_start, cy, x_end, cy, 300)
             elif args.direction == "right":
-                swipe(int(w * 0.35), cy, int(w * 0.35) + pixels, cy, 300)
+                x_start = int(w * 0.35)
+                x_end = min(w, x_start + pixels)
+                swipe(x_start, cy, x_end, cy, 300)
 
             time.sleep(0.3)
 

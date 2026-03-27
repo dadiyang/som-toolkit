@@ -40,8 +40,8 @@ def tap(x, y):
 def input_text(text):
     """Input text via ADB. Uses ADB Keyboard for non-ASCII (Chinese etc)."""
     if all(ord(c) < 128 for c in text):
-        # ASCII: use input text (need to escape spaces and special chars)
-        escaped = text.replace(" ", "%s").replace("&", "\\&").replace("<", "\\<").replace(">", "\\>").replace("|", "\\|")
+        # ASCII: use input text, only replace spaces with %s for adb input text syntax
+        escaped = text.replace(" ", "%s")
         adb("shell", "input", "text", escaped)
     else:
         # Non-ASCII: use ADB Keyboard broadcast
@@ -50,12 +50,11 @@ def input_text(text):
 
 def clear_field():
     """Select all and delete."""
-    # Move to end, select all, delete
+    # Ctrl+A select all (works on most text fields)
     adb("shell", "input", "keyevent", "KEYCODE_MOVE_END")
     time.sleep(0.1)
-    adb("shell", "input", "keyevent", "KEYCODE_MOVE_HOME", "--longpress")
-    # Alternative: Ctrl+A equivalent
-    # Some apps support it, some don't. Use triple-tap as fallback.
+    # Use shift+home to select all from end to beginning
+    adb("shell", "input", "keycombination", "KEYCODE_SHIFT_LEFT", "KEYCODE_MOVE_HOME")
     time.sleep(0.1)
     adb("shell", "input", "keyevent", "KEYCODE_DEL")
 

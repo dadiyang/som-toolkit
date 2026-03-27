@@ -77,6 +77,10 @@ def main():
         ap.print_help()
         return 1
 
+    if getattr(args, 'long') and args.double:
+        print("ERROR: Cannot use --long and --double together.", file=sys.stderr)
+        return 1
+
     if getattr(args, 'long'):
         long_press(x, y)
         print(f"Long press OK ({x},{y})")
