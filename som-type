@@ -107,6 +107,9 @@ def main():
     if args.xy:
         x, y = map(int, args.xy.split(","))
     elif args.index is not None:
+        if not os.path.exists(args.json):
+            print(f"ERROR: {args.json} not found. Run som-annotate first.", file=sys.stderr)
+            return 1
         with open(args.json) as f:
             elements = json.load(f)
         matches = [e for e in elements if e["index"] == args.index]
