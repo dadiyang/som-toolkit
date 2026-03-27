@@ -28,30 +28,31 @@ mob-annotate → mob-find → mob-click → mob-annotate 验证
 
 **每次操作后必须重新 `mob-annotate`**。
 
-## 最重要的规则：WebView 策略切换
+## 最重要的规则：确认你在正确的页面上
 
-```
-mob-annotate → mob-find --summary → 看有效文字数量
+agent 最常见的失败不是 WebView 问题，而是**不在目标页面上却不知道**。
 
-IF 有效文字 < 5 个（只有导航按钮没有内容）
-THEN 当前页面是 WebView 盲区
-THEN 停止使用 mob-find 找元素（一定找不到）
-THEN 改用 mob-click --xy 坐标直接点击
-
-常用 WebView 页面坐标：
-  闲鱼搜索结果：左列第一个商品 (180, 500)，右列 (540, 500)
-  闲鱼商品详情（店铺类）：价格区域 (~100, 350)，购买按钮 (~360, 1550)
+**每次操作前先确认当前页面**：
+```bash
+mob-annotate -j page.json --no-screenshot -q
+mob-find --summary -j page.json
+# 看输出是否符合预期。如果不是目标页面 → 先导航到正确页面
 ```
 
-**这是 agent 最容易犯的错误**：在 WebView 页面反复 mob-find 找元素，什么都找不到却不切换策略。
+**mob-find 返回很少元素时**：
+1. 先确认你是否在正确的 App 和页面上（看元素内容判断）
+2. 可能是页面还在加载 → `sleep 5` 后重试
+3. 如果确认页面对但元素少 → 检查是否有 WebView：
+```bash
+python3 -c "import json; d=json.load(open('page.json')); print(len([e for e in d if 'WebView' in e.get('class_name','')]))"
+```
 
-## 核心知识：中国 App 的 WebView 盲区
+## 核心知识：中国 App 的渲染方式
 
-**微博、知乎**：原生 RecyclerView → uiautomator 能读到全部文字 → 直接用 mob-find。
-
-**闲鱼、小红书、淘宝**：内容区 WebView 渲染 → uiautomator 读不到文字 → 需要截图 + OCR 补充。
-
-**判断方法**：`mob-annotate` 后看 `mob-find --summary`。如果只有导航按钮没有内容文字 → 当前页面是 WebView。
+**实测结果**（通过 class_name 检查 WebView 元素数验证）：
+- **微博/知乎/闲鱼/小红书** 的首页和列表页 → 全部**原生渲染**（WebView=0）
+- 闲鱼验货宝商品详情 → 混合（WebView=2，但核心信息仍原生可读）
+- **绝大多数场景 mob-find 都能工作**，不需要 OCR 兜底
 
 ## App 搜索方式
 
