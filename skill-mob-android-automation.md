@@ -250,50 +250,51 @@ static    [71] desc="" text="我的"              ← 只是文字标签
 8. 个人中心：用户名/鱼力值/发布数/收藏/浏览/交易
 ```
 
-### 坑 14：WebView 搜索结果页的操作策略
+### 坑 14：页面加载不充分导致误判为 WebView
 
-**场景**：闲鱼搜索结果在 WebView 里，uiautomator 完全读不到商品列表。agent 反复 mob-annotate + mob-find 都找不到商品。
+**场景**：deeplink 打开闲鱼搜索后 `sleep 5` 就 `mob-annotate`，拿到的元素很少（看起来像 WebView）。增加到 `sleep 8` 后，同样的页面能拿到 34-35 个有效文字。
 
-**正确策略**：WebView 页面不要用 mob-find 找元素。用坐标直接点击商品卡片区域。
+**A/B 验证数据**（两组搜索词，结果一致）：
 
+| 搜索 | 总元素 | 有效文字 | 价格数值 |
+|------|--------|---------|---------|
+| iPhone16（8秒等待） | 106 | 34 | 3 |
+| 二手iPad（8秒等待） | 76 | 35 | 3 |
+
+**规则**：deeplink 搜索后 `sleep 8` 再 `mob-annotate`。不要因为第一次 dump 结果少就断定是 WebView。
+
+**教训**：不要轻易下"全是 WebView"的结论。先确认页面是否完全加载。
+
+### 坑 15：agent 在真正的 WebView 页面不知道切策略
+
+**场景**：在确认是 WebView 的页面（如闲鱼店铺商品详情），agent 反复 mob-find 找不到任何内容。
+
+**判断标准**：页面加载充分（等了 8 秒以上）后，`mob-find --summary` 有效文字仍然 < 5 个 → 确认是 WebView → 改用坐标或 OCR。
+
+**规则**：
+```
+等待 8 秒后 mob-annotate
+IF 有效文字 < 5 个（排除导航栏和资源 ID）
+THEN 确认是 WebView → 用 mob-click --xy 坐标直接点击
+ELSE 正常使用 mob-find
+```
+
+### 闲鱼各页面渲染方式（验证后修正版）
+
+| 页面 | 渲染 | uiautomator 覆盖 | 等待时间 |
+|------|------|-----------------|---------|
+| 首页 Feed | 混合 | ~40% | 5 秒 |
+| 搜索结果列表 | **混合（非 WebView）** | ~40%（价格/描述/地区可读） | **8 秒** |
+| 搜索建议页 | 原生 | 高（所有建议可 clickable） | 3 秒 |
+| 商品详情（个人闲置） | 原生 | 高（价格/运费/SKU 全可读） | 5 秒 |
+| 商品详情（店铺/验货宝） | WebView | 极低（~5%） | - |
+
+**搜索路径**：
 ```bash
-# 搜索结果页布局固定：第一个商品卡片通常在 (180, 500) 或 (540, 500)
-mob-click --xy 180,500    # 左列第一个商品
-mob-click --xy 540,500    # 右列第一个商品
-```
-
-**如何判断是否在 WebView**：`mob-find --summary` 返回的 Clickable 数量 < 10 且没有商品相关文字 → WebView 盲区 → 改用坐标点击。
-
-### 坑 15：agent 在 WebView 盲区不知道切策略
-
-**场景**：技能文件写了 WebView 需要坐标点击，但 agent 在实际操作中仍然反复尝试 mob-find。
-
-**规则（写入 CLAUDE-android.md）**：
-
-```
-IF mob-find --summary 返回的有效文字 < 5 个
-THEN 当前页面是 WebView
-THEN 不要再 mob-find 找元素
-THEN 用 mob-click --xy 坐标直接点击
-```
-
-### 坑 16（修正）：闲鱼搜索结果不全是 WebView
-
-**场景**：之前判断闲鱼搜索结果全是 WebView，但进一步验证发现搜索结果列表**部分内容原生可读**。
-
-**修正认知**：
-- 搜索建议页（输入关键词后的下拉建议）= **原生**，所有建议可 clickable
-- 搜索结果列表 = **混合**——商品标题和描述可读，但图片和部分价格元素空
-- 商品详情（个人闲置）= **原生**
-- 商品详情（店铺）= **WebView**
-
-**更佳搜索路径**：
-```bash
-# 方案A：deeplink（最快，但部分设备不支持）
+# 方案A：deeplink + 充分等待
 adb shell am start -a android.intent.action.VIEW -d "fleamarket://searchresult?keyword=关键词"
+sleep 8
 
-# 方案B：搜索建议（更可靠）
-# 1. 点击搜索栏
-# 2. 等搜索建议页加载
-# 3. mob-click --text "关键词"（点击搜索建议）
+# 方案B：搜索建议页（原生可点击）
+# 点击搜索栏 → 等搜索建议加载 → mob-click --text "关键词"
 ```
