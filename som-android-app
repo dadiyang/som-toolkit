@@ -1,0 +1,95 @@
+#!/usr/bin/env python3
+"""
+som-android-app: Android App 启动和切换
+用法:
+    som-android-app xianyu                  # 别名启动
+    som-android-app com.taobao.idlefish     # 包名启动
+    som-android-app --list                  # 列出别名
+    som-android-app --current               # 当前前台 App
+"""
+import argparse
+import os
+import subprocess
+import sys
+
+
+APP_ALIASES = {
+    "xianyu": "com.taobao.idlefish",
+    "xhs": "com.xingin.xhs",
+    "weibo": "com.sina.weibo",
+    "zhihu": "com.zhihu.android",
+    "wechat": "com.tencent.mm",
+    "alipay": "com.eg.android.AlipayGphone",
+    "taobao": "com.taobao.taobao",
+    "douyin": "com.ss.android.ugc.aweme",
+    "settings": "com.android.settings",
+    "chrome": "com.android.chrome",
+}
+
+
+def get_device():
+    serial = os.environ.get("ADB_SERIAL", "")
+    if serial:
+        return ["-s", serial]
+    result = subprocess.run(["adb", "devices"], capture_output=True, text=True)
+    lines = [l for l in result.stdout.strip().split("\n")[1:] if l.strip() and "device" in l]
+    if len(lines) == 0:
+        sys.exit("ERROR: No ADB device connected.")
+    if len(lines) > 1:
+        sys.exit(f"ERROR: Multiple devices. Set ADB_SERIAL=<serial>\n{result.stdout}")
+    return []
+
+
+def adb(*args):
+    cmd = ["adb"] + get_device() + list(args)
+    return subprocess.run(cmd, capture_output=True, text=True)
+
+
+def get_current_app():
+    result = adb("shell", "dumpsys", "activity", "recents")
+    for line in result.stdout.split("\n"):
+        if "realActivity=" in line:
+            # Extract package/activity from realActivity=com.foo/.BarActivity
+            part = line.split("realActivity=")[1].split()[0]
+            package = part.split("/")[0]
+            return package
+    return "unknown"
+
+
+def main():
+    ap = argparse.ArgumentParser(description="Android app launcher")
+    ap.add_argument("app", nargs="?", help="App alias or package name")
+    ap.add_argument("--list", action="store_true", help="List known app aliases")
+    ap.add_argument("--current", action="store_true", help="Show current foreground app")
+    args = ap.parse_args()
+
+    if args.list:
+        for alias, pkg in sorted(APP_ALIASES.items()):
+            print(f"  {alias:12s} → {pkg}")
+        return 0
+
+    if args.current:
+        pkg = get_current_app()
+        print(f"Current: {pkg}")
+        return 0
+
+    if not args.app:
+        ap.print_help()
+        return 1
+
+    # Resolve alias
+    package = APP_ALIASES.get(args.app.lower(), args.app)
+
+    # Launch via monkey (most reliable, doesn't need activity name)
+    result = adb("shell", "monkey", "-p", package,
+                 "-c", "android.intent.category.LAUNCHER", "1")
+    if "No activities found" in result.stdout:
+        print(f"ERROR: App not installed or no launcher activity: {package}", file=sys.stderr)
+        return 1
+
+    print(f"Launched: {package}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
