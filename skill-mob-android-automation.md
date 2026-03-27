@@ -49,33 +49,22 @@ mob-annotate → mob-find 找目标 → mob-click 操作 → mob-annotate 验证
 | 闲鱼首页 | 混合 | ✅ com.taobao.idlefish | ✅ (38 文字) | resource_id 检查 |
 | 闲鱼搜索 | 混合 | ✅ com.taobao.idlefish | ✅ (43 文字) | resource_id 检查 |
 | 闲鱼详情（个人）| 混合 | ✅ com.taobao.idlefish | ✅ (22 文字) | resource_id 检查 |
-| **闲鱼详情（店铺）** | **纯** | **❌ 穿透到底层 App** | **❌** | resource_id ≠ 当前 App |
+| **闲鱼详情（店铺）** | **纯 Flutter** | **dump 失败** | **❌** | uiautomator 报 could not get idle state |
 
-### 闲鱼 Flutter 详情页的陷阱（最重要的发现）
+### 闲鱼 Flutter 详情页（部分类型）
 
-**症状**：`mob-annotate` 在闲鱼详情页返回的元素看起来像小红书内容（用户昵称、推荐数）。
+**症状**：闲鱼店铺/验货宝商品的详情页，`uiautomator dump` 报 `ERROR: could not get idle state` 或返回残留数据（其他 App 的 resource_id）。
 
-**根因**：闲鱼详情页用 **纯 Flutter（io.flutter.embedding）** 渲染。Flutter 有独立渲染管线（Skia），不走 Android View 系统。uiautomator 穿透 Flutter 层，dump 到了底层的其他 Activity 的 View 树。
+**根因**：这类详情页用纯 Flutter 渲染（`io.flutter.embedding`）。Flutter 的 SurfaceView 不参与 Android View 体系，uiautomator 无法遍历，dump 直接失败。
 
-**验证**：
-```bash
-# 检查当前页面是否用 Flutter
-adb shell dumpsys activity top | grep "flutter"
-# 如果看到 FlutterPageFragmentWrapper / DartMessenger → Flutter 渲染
+**个人闲置商品的详情页不受影响**——虽然也有 Flutter Fragment，但采用混合渲染，核心 UI 元素（价格/运费/按钮）通过原生 View 暴露。
 
-# 检查 uiautomator dump 的 resource_id 归属
-python3 -c "
-import json
-d = json.load(open('page.json'))
-pkgs = set(e.get('resource_id','').split(':id/')[0] for e in d if ':id/' in e.get('resource_id',''))
-print(f'Packages: {pkgs}')
-# 如果包名不是当前 App → uiautomator 穿透了，数据不可信
-"
-```
+**工具已自动处理**：`mob-annotate` 输出的 `meta.trustworthy` 字段会检测 resource_id 归属。dump 失败或返回错误数据时标记为 `false`。
 
-**对闲鱼详情页的操作策略**：uiautomator 数据完全不可信，必须用截图 + OCR 或坐标点击。
-
-**注意**：闲鱼首页和搜索页虽然也有 Flutter Fragment，但采用**混合渲染**——部分 UI 仍通过原生 View 暴露，uiautomator 可以读到。只有详情页是纯 Flutter。
+**验证记录**：
+- `am force-stop` 知乎后重新 dump 闲鱼详情 → 仍报 `could not get idle state`
+- 返回搜索结果页后 dump → 正常，package=com.taobao.idlefish
+- 因此确认：不是"穿透到其他 App"，是 dump 本身在纯 Flutter 页面上失败
 
 ## 实战踩坑记录
 
