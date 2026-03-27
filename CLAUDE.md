@@ -158,8 +158,8 @@ som-android-annotate → som-android-find 找目标 → som-android-click 操作
 
 **绝对规则：**
 1. **每次操作后必须重新 annotate** — 元素编号在任何页面变化后全部失效
-2. **中文输入必须先切换到 ADB Keyboard** — `adb shell ime set com.android.adbkeyboard/.AdbIME`，用完恢复原输入法
-3. **App 内搜索框可能不是标准输入控件** — 闲鱼等 App 首页搜索栏是轮播展示组件，不接受直接键盘输入。通过点击历史搜索标签或在搜索结果页修改关键词来绕过
+2. **必须用 annotate 结果的坐标，禁止目测估算** — Android 状态栏会遮挡顶部区域的触摸事件，元素视觉位置和可点击区域可能不一致。annotate 给出的坐标是可点击的真实位置
+3. **中文输入必须先切换到 ADB Keyboard** — `adb shell ime set com.android.adbkeyboard/.AdbIME`，用完恢复原输入法
 
 ### --caption 使用策略
 
@@ -178,8 +178,7 @@ som-android-app zhihu      # 知乎
 som-android-app --list     # 查看全部别名
 ```
 
-### 已知限制
+### 注意事项
 
-- **闲鱼首页搜索栏不可直接编辑**：是自定义轮播组件，点击不弹出键盘。需通过历史搜索标签跳转，或在搜索结果页修改关键词
-- **som-android-type --clear 在自定义输入框不可靠**：keycombination 全选在部分 App 不生效，退格键逐字删除是 fallback
-- **OmniParser 偶尔漏检搜索栏**：半透明/动态轮播区域可能不被检测为独立元素，用 `--xy` 直接坐标点击绕过
+- **som-android-type --clear 在部分自定义输入框不可靠**：keycombination 全选在某些 App 不生效。fallback：长按输入框 → annotate 找"全选"菜单 → 点击 → 删除，模拟人的操作路径
+- **顶部元素坐标偏移**：Android 状态栏（约 y=0~76）会拦截触摸事件。搜索栏等顶部元素的视觉位置可能在状态栏区域内，但可点击区域在状态栏下方。annotate 检测到的坐标已考虑这一点，用工具链点击即可命中
