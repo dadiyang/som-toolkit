@@ -14,4 +14,10 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 if __name__ == "__main__":
     som_find = os.path.join(SCRIPT_DIR, "som-find")
-    sys.exit(subprocess.run([sys.executable, som_find] + sys.argv[1:]).returncode)
+    result = subprocess.run([sys.executable, som_find] + sys.argv[1:],
+                            capture_output=True, text=True)
+    # Replace desktop som-click with som-android-click in --cmd output
+    stdout = result.stdout.replace("som-click ", "som-android-click ")
+    sys.stdout.write(stdout)
+    sys.stderr.write(result.stderr)
+    sys.exit(result.returncode)

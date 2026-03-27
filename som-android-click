@@ -20,7 +20,7 @@ def get_device():
     serial = os.environ.get("ADB_SERIAL", "")
     if serial:
         return ["-s", serial]
-    result = subprocess.run(["adb", "devices"], capture_output=True, text=True)
+    result = subprocess.run(["adb", "devices"], capture_output=True, text=True, timeout=10)
     lines = [l for l in result.stdout.strip().split("\n")[1:] if l.strip() and "device" in l]
     if len(lines) == 0:
         sys.exit("ERROR: No ADB device connected.")
@@ -31,7 +31,7 @@ def get_device():
 
 def adb(*args):
     cmd = ["adb"] + get_device() + list(args)
-    return subprocess.run(cmd, capture_output=True, text=True, check=True)
+    return subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=30)
 
 
 def tap(x, y):
@@ -65,6 +65,9 @@ def main():
             return 1
         with open(args.json) as f:
             elements = json.load(f)
+        if not elements:
+            print("ERROR: No elements in JSON. Re-run som-android-annotate.", file=sys.stderr)
+            return 1
         matches = [e for e in elements if e["index"] == args.index]
         if not matches:
             print(f"ERROR: Element [{args.index}] not found. Max index: {max(e['index'] for e in elements)}", file=sys.stderr)

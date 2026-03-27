@@ -22,7 +22,7 @@ def get_device():
     serial = os.environ.get("ADB_SERIAL", "")
     if serial:
         return ["-s", serial]
-    result = subprocess.run(["adb", "devices"], capture_output=True, text=True)
+    result = subprocess.run(["adb", "devices"], capture_output=True, text=True, timeout=10)
     lines = [l for l in result.stdout.strip().split("\n")[1:] if l.strip() and "device" in l]
     if len(lines) == 0:
         sys.exit("ERROR: No ADB device connected.")
@@ -33,7 +33,7 @@ def get_device():
 
 def adb(*args):
     cmd = ["adb"] + get_device() + list(args)
-    return subprocess.run(cmd, capture_output=True, text=True, check=True)
+    return subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=30)
 
 
 def get_screen_size():
@@ -44,8 +44,11 @@ def get_screen_size():
             parts = line.split()[-1].split("x")
             return int(parts[0]), int(parts[1])
     # Fallback: last line
-    parts = result.stdout.strip().split()[-1].split("x")
-    return int(parts[0]), int(parts[1])
+    parts = result.stdout.strip().split()
+    if not parts or "x" not in parts[-1]:
+        sys.exit("ERROR: Cannot parse screen size. Check ADB connection.")
+    w, h = parts[-1].split("x")
+    return int(w), int(h)
 
 
 def swipe(x1, y1, x2, y2, duration_ms=300):

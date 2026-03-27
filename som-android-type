@@ -3,7 +3,7 @@
 som-android-type: 点击元素后输入文字
 用法:
     som-android-type 42 "你好" -j page.json     # 点击后输入
-    som-android-type --text "你好"               # 直接输入（不点击）
+    som-android-type --text-only "你好"          # 直接输入（不点击）
     som-android-type 42 "hello" --clear         # 先清空再输入
     som-android-type --key enter                # 按键
 """
@@ -19,7 +19,7 @@ def get_device():
     serial = os.environ.get("ADB_SERIAL", "")
     if serial:
         return ["-s", serial]
-    result = subprocess.run(["adb", "devices"], capture_output=True, text=True)
+    result = subprocess.run(["adb", "devices"], capture_output=True, text=True, timeout=10)
     lines = [l for l in result.stdout.strip().split("\n")[1:] if l.strip() and "device" in l]
     if len(lines) == 0:
         sys.exit("ERROR: No ADB device connected.")
@@ -30,7 +30,7 @@ def get_device():
 
 def adb(*args):
     cmd = ["adb"] + get_device() + list(args)
-    return subprocess.run(cmd, capture_output=True, text=True, check=True)
+    return subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=30)
 
 
 def tap(x, y):
