@@ -276,3 +276,24 @@ THEN 当前页面是 WebView
 THEN 不要再 mob-find 找元素
 THEN 用 mob-click --xy 坐标直接点击
 ```
+
+### 坑 16（修正）：闲鱼搜索结果不全是 WebView
+
+**场景**：之前判断闲鱼搜索结果全是 WebView，但进一步验证发现搜索结果列表**部分内容原生可读**。
+
+**修正认知**：
+- 搜索建议页（输入关键词后的下拉建议）= **原生**，所有建议可 clickable
+- 搜索结果列表 = **混合**——商品标题和描述可读，但图片和部分价格元素空
+- 商品详情（个人闲置）= **原生**
+- 商品详情（店铺）= **WebView**
+
+**更佳搜索路径**：
+```bash
+# 方案A：deeplink（最快，但部分设备不支持）
+adb shell am start -a android.intent.action.VIEW -d "fleamarket://searchresult?keyword=关键词"
+
+# 方案B：搜索建议（更可靠）
+# 1. 点击搜索栏
+# 2. 等搜索建议页加载
+# 3. mob-click --text "关键词"（点击搜索建议）
+```
