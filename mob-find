@@ -23,7 +23,8 @@ def load_elements(json_path):
         print(f"ERROR: {json_path} not found. Run mob-annotate first.", file=sys.stderr)
         sys.exit(1)
     with open(json_path) as f:
-        return json.load(f)
+        data = json.load(f)
+        return data.get("elements", data) if isinstance(data, dict) else data
 
 
 def page_summary(elements):

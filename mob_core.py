@@ -173,9 +173,29 @@ def dump_ui_tree(output_json=None):
     for i, e in enumerate(elements):
         e.index = i
 
+    # Verify data trustworthiness: check resource_id belongs to current app
+    current_pkg, _ = get_current_app()
+    rid_pkgs = set()
+    for e in elements:
+        if e.resource_id and ":id/" in e.resource_id:
+            rid_pkgs.add(e.resource_id.split(":id/")[0])
+    # If resource_ids all belong to a DIFFERENT app → Flutter penetration
+    is_trustworthy = not rid_pkgs or current_pkg in rid_pkgs or current_pkg == "unknown"
+
     if output_json:
+        data = [e.to_dict() for e in elements]
+        # Add metadata
+        meta = {
+            "elements": data,
+            "meta": {
+                "current_app": current_pkg,
+                "resource_id_packages": list(rid_pkgs),
+                "trustworthy": is_trustworthy,
+                "element_count": len(elements),
+            }
+        }
         with open(output_json, "w", encoding="utf-8") as f:
-            json.dump([e.to_dict() for e in elements], f, ensure_ascii=False, indent=2)
+            json.dump(meta, f, ensure_ascii=False, indent=2)
 
     return elements
 

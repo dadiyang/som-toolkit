@@ -89,9 +89,18 @@ def main():
     # Get context
     pkg, act = get_current_app()
 
+    # Check trustworthiness via resource_id ownership
+    rid_pkgs = set()
+    for e in elements:
+        if e.resource_id and ":id/" in e.resource_id:
+            rid_pkgs.add(e.resource_id.split(":id/")[0])
+    trustworthy = not rid_pkgs or pkg in rid_pkgs or pkg == "unknown"
+
     if not args.quiet:
         print(f"App: {pkg}", file=sys.stderr)
         print(f"Elements: {len(elements)} ({sum(1 for e in elements if e.clickable)} clickable) in {elapsed:.1f}s", file=sys.stderr)
+        if not trustworthy:
+            print(f"⚠️  WARNING: UI tree belongs to {rid_pkgs}, not {pkg}. Page is Flutter — data unreliable!", file=sys.stderr)
         if not args.no_screenshot:
             print(f"Annotated: {args.output}", file=sys.stderr)
         print(f"JSON: {args.json}", file=sys.stderr)

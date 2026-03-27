@@ -62,7 +62,8 @@ def main():
     # Index-based click from JSON
     if args.index is not None:
         with open(args.json) as f:
-            elements_data = json.load(f)
+            data = json.load(f)
+            elements_data = data.get("elements", data) if isinstance(data, dict) else data
         matches = [e for e in elements_data if e["index"] == args.index]
         if not matches:
             print(f"ERROR: Element [{args.index}] not found.", file=sys.stderr)
