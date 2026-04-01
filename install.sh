@@ -84,7 +84,9 @@ mkdir -p "$OMNI_DIR/util"
 if [ ! -f "$OMNI_DIR/util/omniparser.py" ]; then
     echo "Downloading OmniParser source..."
     TMP_ZIP="/tmp/omniparser_src.zip"
-    curl -L -o "$TMP_ZIP" "https://github.com/microsoft/OmniParser/archive/refs/heads/master.zip" 2>/dev/null
+    curl -L --connect-timeout 30 --max-time 300 \
+         -o "$TMP_ZIP" \
+         "https://github.com/microsoft/OmniParser/archive/refs/heads/master.zip"
     unzip -q -o "$TMP_ZIP" "OmniParser-master/util/*" -d /tmp/
     cp -r /tmp/OmniParser-master/util/* "$OMNI_DIR/util/"
     rm -rf "$TMP_ZIP" /tmp/OmniParser-master
@@ -93,14 +95,33 @@ fi
 echo "OmniParser source: $OMNI_DIR"
 echo "To use a different location: export OMNIPARSER_DIR=/your/path"
 
-# 7. Patch utils.py for compatibility
+# 7. Patch utils.py for compatibility (use Python for cross-platform reliability)
 echo "Patching for compatibility..."
 UTILS="$OMNI_DIR/util/utils.py"
 if [ -f "$UTILS" ]; then
-    # Fix PaddleOCR compatibility
-    sed -i.bak 's/from openai import AzureOpenAI/try:\n    from openai import AzureOpenAI\nexcept ImportError:\n    AzureOpenAI = None/' "$UTILS" 2>/dev/null || true
-    # Fix easyocr to use CPU
-    sed -i.bak "s/reader = easyocr.Reader(\['en'\])/reader = easyocr.Reader(['en'], gpu=False)/" "$UTILS" 2>/dev/null || true
+    $PYTHON -c "
+import pathlib
+p = pathlib.Path('$UTILS')
+text = p.read_text()
+changed = False
+if 'from openai import AzureOpenAI' in text and 'try:' not in text.split('from openai import AzureOpenAI')[0][-20:]:
+    text = text.replace(
+        'from openai import AzureOpenAI',
+        'try:\n    from openai import AzureOpenAI\nexcept ImportError:\n    AzureOpenAI = None'
+    )
+    changed = True
+if \"reader = easyocr.Reader(['en'])\" in text:
+    text = text.replace(
+        \"reader = easyocr.Reader(['en'])\",
+        \"reader = easyocr.Reader(['en'], gpu=False)\"
+    )
+    changed = True
+if changed:
+    p.write_text(text)
+    print('Patched utils.py')
+else:
+    print('utils.py already patched or no changes needed')
+"
 fi
 
 # 8. 下载模型权重到 ~/data/models/omniparser/ (不污染源码)
@@ -145,8 +166,12 @@ echo "To override: SOM_WEIGHTS_DIR, OMNIPARSER_DIR"
 
 echo ""
 echo "=== Installation Complete ==="
-echo "Usage:"
+echo "Usage (Desktop):"
 echo "  source $SCRIPT_DIR/venv/bin/activate"
 echo "  python3 som-toolkit/som-annotate --no-caption -o page.jpg -j page.json"
 echo "  python3 som-toolkit/som-find --summary -j page.json"
 echo "  python3 som-toolkit/som-click 42 -j page.json"
+echo ""
+echo "For Android tools, also install:"
+echo "  - ADB (Android Debug Bridge): sudo apt install adb"
+echo "  - ADB Keyboard on the Android device"

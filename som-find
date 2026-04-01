@@ -17,13 +17,10 @@ import json
 import os
 import sys
 
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, SCRIPT_DIR)
 
-def load_elements(json_path):
-    if not os.path.exists(json_path):
-        print(f"ERROR: {json_path} not found. Run som-annotate first.", file=sys.stderr)
-        sys.exit(1)
-    with open(json_path) as f:
-        return json.load(f)
+from som_common import load_elements
 
 
 def match_keyword(element, keyword):
@@ -32,7 +29,7 @@ def match_keyword(element, keyword):
     return keyword.lower() in content
 
 
-def match_area(element, area, screen_w=2880, screen_h=1800):
+def match_area(element, area, screen_w, screen_h):
     """Filter by screen area."""
     cx, cy = element["center_x"], element["center_y"]
     third_x = screen_w / 3
@@ -53,6 +50,16 @@ def match_area(element, area, screen_w=2880, screen_h=1800):
     return True
 
 
+def infer_screen_size(elements):
+    """Infer screen size from element coordinates as fallback."""
+    if not elements:
+        return 1920, 1080
+    max_x = max(e["center_x"] + e.get("width", 0) // 2 for e in elements)
+    max_y = max(e["center_y"] + e.get("height", 0) // 2 for e in elements)
+    # Round up to common resolutions
+    return max(max_x, 1080), max(max_y, 720)
+
+
 def format_element(e):
     """Format element for display."""
     content = (e.get("content") or "").strip()
@@ -65,10 +72,8 @@ def page_summary(elements):
     lines = []
     lines.append("=== Page Summary ===")
 
-    # Categorize elements
     buttons = []
     links = []
-    inputs = []
     prices = []
     shipping = []
     texts = []
@@ -80,9 +85,9 @@ def page_summary(elements):
         cl = c.lower()
         inter = e.get("interactivity", False)
 
-        if "$" in c or "¥" in c or "price" in cl:
+        if "$" in c or "¥" in c or "price" in cl or "元" in c or "价" in cl:
             prices.append(e)
-        elif any(k in cl for k in ["shipping", "delivery", "free delivery"]):
+        elif any(k in cl for k in ["shipping", "delivery", "free delivery", "运费", "包邮", "邮费"]):
             shipping.append(e)
         elif inter and e["type"] == "icon":
             buttons.append(e)
@@ -133,19 +138,19 @@ def extract_info(elements):
             continue
         cl = c.lower()
 
-        if "$" in c or "¥" in c:
+        if "$" in c or "¥" in c or "元" in c or "价" in cl:
             info["prices"].append({"index": e["index"], "text": c})
-        elif any(k in cl for k in ["shipping", "usps", "ups", "fedex", "free delivery"]):
+        elif any(k in cl for k in ["shipping", "usps", "ups", "fedex", "free delivery", "运费", "包邮", "邮费"]):
             info["shipping"].append({"index": e["index"], "text": c})
-        elif "delivery" in cl or "estimated" in cl:
+        elif any(k in cl for k in ["delivery", "estimated", "配送", "送达", "预计"]):
             info["delivery"].append({"index": e["index"], "text": c})
-        elif "return" in cl:
+        elif any(k in cl for k in ["return", "退货", "退款", "售后"]):
             info["returns"].append({"index": e["index"], "text": c})
-        elif any(k in cl for k in ["color", "size", "fit", "select"]):
+        elif any(k in cl for k in ["color", "size", "fit", "select", "颜色", "尺码", "尺寸", "规格", "型号"]):
             info["sku_options"].append({"index": e["index"], "text": c})
-        elif any(k in cl for k in ["sold", "trending", "watching", "available"]):
+        elif any(k in cl for k in ["sold", "trending", "watching", "available", "已售", "想要", "库存"]):
             info["demand"].append({"index": e["index"], "text": c})
-        elif any(k in cl for k in ["buy", "add to cart", "checkout"]):
+        elif any(k in cl for k in ["buy", "add to cart", "checkout", "购买", "加入购物车", "立即购买", "下单", "立即下单"]):
             info["buttons"].append({"index": e["index"], "text": c})
 
     return info
@@ -164,7 +169,7 @@ def main():
     ap.add_argument("--cmd", action="store_true", help="Output som-click command")
     args = ap.parse_args()
 
-    elements = load_elements(args.json)
+    elements, meta = load_elements(args.json)
 
     if args.summary:
         print(page_summary(elements))
@@ -175,6 +180,12 @@ def main():
         print(json.dumps(info, ensure_ascii=False, indent=2))
         return 0
 
+    # Determine screen size for area filtering
+    screen_w = meta.get("screen_w", 0)
+    screen_h = meta.get("screen_h", 0)
+    if not screen_w or not screen_h:
+        screen_w, screen_h = infer_screen_size(elements)
+
     # Filter
     results = elements
     if args.keyword:
@@ -184,7 +195,7 @@ def main():
     if args.interactive:
         results = [e for e in results if e.get("interactivity")]
     if args.area:
-        results = [e for e in results if match_area(e, args.area)]
+        results = [e for e in results if match_area(e, args.area, screen_w, screen_h)]
 
     if not results:
         print("No elements found.", file=sys.stderr)

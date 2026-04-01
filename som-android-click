@@ -11,31 +11,14 @@ som-android-click: 根据 SoM 编号点击 Android 屏幕元素
 import argparse
 import json
 import os
-import subprocess
 import sys
 import time
 
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, SCRIPT_DIR)
 
-def get_device():
-    serial = os.environ.get("ADB_SERIAL", "")
-    if serial:
-        return ["-s", serial]
-    result = subprocess.run(["adb", "devices"], capture_output=True, text=True, timeout=10)
-    lines = [l for l in result.stdout.strip().split("\n")[1:] if l.strip() and "device" in l]
-    if len(lines) == 0:
-        sys.exit("ERROR: No ADB device connected.")
-    if len(lines) > 1:
-        sys.exit(f"ERROR: Multiple devices. Set ADB_SERIAL=<serial>\n{result.stdout}")
-    return []
-
-
-def adb(*args):
-    cmd = ["adb"] + get_device() + list(args)
-    return subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=30)
-
-
-def tap(x, y):
-    adb("shell", "input", "tap", str(x), str(y))
+from som_common import load_elements, parse_xy
+from som_android_common import adb, tap
 
 
 def long_press(x, y, duration_ms=800):
@@ -53,18 +36,14 @@ def main():
     ap.add_argument("index", nargs="?", type=int, help="Element index to click")
     ap.add_argument("--json", "-j", default="som_elements.json", help="Elements JSON path")
     ap.add_argument("--xy", help="Direct coordinates x,y")
-    ap.add_argument("--long", action="store_true", help="Long press (~800ms)")
+    ap.add_argument("--long", dest="long_press", action="store_true", help="Long press (~800ms)")
     ap.add_argument("--double", action="store_true", help="Double tap")
     args = ap.parse_args()
 
     if args.xy:
-        x, y = map(int, args.xy.split(","))
+        x, y = parse_xy(args.xy)
     elif args.index is not None:
-        if not os.path.exists(args.json):
-            print(f"ERROR: {args.json} not found. Run som-android-annotate first.", file=sys.stderr)
-            return 1
-        with open(args.json) as f:
-            elements = json.load(f)
+        elements, _meta = load_elements(args.json)
         if not elements:
             print("ERROR: No elements in JSON. Re-run som-android-annotate.", file=sys.stderr)
             return 1
@@ -80,11 +59,11 @@ def main():
         ap.print_help()
         return 1
 
-    if getattr(args, 'long') and args.double:
+    if args.long_press and args.double:
         print("ERROR: Cannot use --long and --double together.", file=sys.stderr)
         return 1
 
-    if getattr(args, 'long'):
+    if args.long_press:
         long_press(x, y)
         print(f"Long press OK ({x},{y})")
     elif args.double:

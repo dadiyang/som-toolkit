@@ -12,7 +12,7 @@
 | `som-find` | 按关键词搜索元素 | `som-find "Buy" --first --cmd -j page.json` |
 | `som-find --summary` | 页面概览 | `som-find --summary -j page.json` |
 | `som-find --extract` | 提取价格/运费/SKU | `som-find --extract -j page.json` |
-| `som-click` | 点击元素 | `som-click 42 -j page.json` |
+| `som-click` | 点击元素 | `som-click 42 -j page.json` / `som-click 42 -m cmd` (新标签) |
 | `som-type` | 输入文字 | `som-type 42 "text" -j page.json` |
 | `som-tab` | 标签页切换 | `som-tab next` / `som-tab close` / `som-tab 2` |
 | `som-scroll` | 滚动页面 | `som-scroll down` (整页) / `som-scroll down --lines 3` (精细) |
@@ -56,11 +56,21 @@ sleep 5  # 等待页面加载
 电商网站的商品链接通常在**新标签页**打开：
 
 ```bash
-som-click 42 -j page.json    # 点击商品
-som-tab next                  # 切到新标签
-sleep 3                       # 等页面加载
-som-annotate -o product.png -j product.json -q --wait 2   # 标注新页面
+# 方法 1：Cmd/Ctrl+Click 强制新标签打开（推荐）
+som-click 42 -m cmd -j page.json   # macOS: Cmd+Click
+som-click 42 -m ctrl -j page.json  # Linux: Ctrl+Click
+som-tab next                        # 切到新标签
+sleep 3
+som-annotate -o product.png -j product.json -q --wait 2
+
+# 方法 2：直接点击（如果链接本身就是 target="_blank"）
+som-click 42 -j page.json
+som-tab next
+sleep 3
+som-annotate -o product.png -j product.json -q --wait 2
 ```
+
+修饰键参数 `--modifier` / `-m` 支持：`cmd`, `shift`, `alt`, `ctrl`，可逗号组合（如 `-m cmd,shift`）。
 
 ## 迷失恢复（最重要的规则）
 

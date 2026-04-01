@@ -5,6 +5,9 @@ som-click: 根据 SoM 编号点击元素
     som-click 42                          # 点击编号 42 的元素
     som-click 42 --json som_elements.json # 指定元素文件
     som-click --xy 500,300                # 直接点击坐标
+    som-click 42 --modifier cmd           # Cmd+Click（新标签打开链接）
+    som-click 42 --modifier shift         # Shift+Click
+    som-click 42 --modifier cmd,shift     # Cmd+Shift+Click
 """
 import argparse
 import json
@@ -13,6 +16,11 @@ import platform
 import subprocess
 import sys
 import time
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, SCRIPT_DIR)
+
+from som_common import load_elements, parse_xy
 
 
 _cliclick_cache = None
@@ -29,41 +37,99 @@ def _cliclick_available():
     return _cliclick_cache
 
 
-def click_at(x, y):
+def _macos_mouse_events(events_code):
+    """Execute macOS CGEvent mouse operations in a subprocess."""
+    subprocess.run([sys.executable, "-c",
+        "import Quartz, time\n" + events_code
+    ], check=True)
+
+
+# Modifier key mappings per platform
+_CLICLICK_MOD = {"cmd": "cmd", "shift": "shift", "alt": "alt", "ctrl": "ctrl"}
+_XDOTOOL_MOD = {"cmd": "super", "shift": "shift", "alt": "alt", "ctrl": "ctrl"}
+
+
+def _parse_modifiers(modifier_str):
+    """Parse comma-separated modifier string into list. Returns [] if None."""
+    if not modifier_str:
+        return []
+    mods = [m.strip().lower() for m in modifier_str.split(",")]
+    valid = {"cmd", "shift", "alt", "ctrl"}
+    for m in mods:
+        if m not in valid:
+            print(f"ERROR: Unknown modifier '{m}'. Valid: {', '.join(sorted(valid))}", file=sys.stderr)
+            sys.exit(1)
+    return mods
+
+
+def click_at(x, y, modifiers=None):
+    x, y = int(x), int(y)
+    mods = modifiers or []
     system = platform.system()
     if system == "Darwin":
         if _cliclick_available():
-            subprocess.run(["cliclick", f"c:{x},{y}"], check=True)
+            cmds = []
+            for m in mods:
+                cmds.append(f"kd:{_CLICLICK_MOD[m]}")
+            cmds.append(f"c:{x},{y}")
+            for m in mods:
+                cmds.append(f"ku:{_CLICLICK_MOD[m]}")
+            subprocess.run(["cliclick"] + cmds, check=True)
         else:
-            # Fallback: use python to generate CGEvent (requires pyobjc)
-            subprocess.run([sys.executable, "-c", f"""
-import Quartz
-event = Quartz.CGEventCreateMouseEvent(None, Quartz.kCGEventMouseMoved, ({x}, {y}), Quartz.kCGMouseButtonLeft)
-Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
-import time; time.sleep(0.05)
-event = Quartz.CGEventCreateMouseEvent(None, Quartz.kCGEventLeftMouseDown, ({x}, {y}), Quartz.kCGMouseButtonLeft)
-Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
-time.sleep(0.05)
-event = Quartz.CGEventCreateMouseEvent(None, Quartz.kCGEventLeftMouseUp, ({x}, {y}), Quartz.kCGMouseButtonLeft)
-Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
-"""], check=True)
+            # CGEvent: set modifier flags on the mouse events
+            flag_map = {
+                "cmd": "Quartz.kCGEventFlagMaskCommand",
+                "shift": "Quartz.kCGEventFlagMaskShift",
+                "alt": "Quartz.kCGEventFlagMaskAlternate",
+                "ctrl": "Quartz.kCGEventFlagMaskControl",
+            }
+            flags_expr = "|".join(flag_map[m] for m in mods) if mods else "0"
+            _macos_mouse_events(
+                f"p=({x},{y})\n"
+                f"flags={flags_expr}\n"
+                "e=Quartz.CGEventCreateMouseEvent(None,Quartz.kCGEventMouseMoved,p,Quartz.kCGMouseButtonLeft)\n"
+                "if flags:e.setFlags(flags)\n"
+                "Quartz.CGEventPost(Quartz.kCGHIDEventTap,e);time.sleep(0.05)\n"
+                "e=Quartz.CGEventCreateMouseEvent(None,Quartz.kCGEventLeftMouseDown,p,Quartz.kCGMouseButtonLeft)\n"
+                "if flags:e.setFlags(flags)\n"
+                "Quartz.CGEventPost(Quartz.kCGHIDEventTap,e);time.sleep(0.05)\n"
+                "e=Quartz.CGEventCreateMouseEvent(None,Quartz.kCGEventLeftMouseUp,p,Quartz.kCGMouseButtonLeft)\n"
+                "if flags:e.setFlags(flags)\n"
+                "Quartz.CGEventPost(Quartz.kCGHIDEventTap,e)\n"
+            )
     elif system == "Linux":
         subprocess.run(["xdotool", "mousemove", str(x), str(y)], check=True)
         time.sleep(0.1)
-        subprocess.run(["xdotool", "click", "1"], check=True)
+        if mods:
+            # xdotool keydown → click → keyup
+            xmods = [_XDOTOOL_MOD[m] for m in mods]
+            for m in xmods:
+                subprocess.run(["xdotool", "keydown", m], check=True)
+            subprocess.run(["xdotool", "click", "1"], check=True)
+            for m in xmods:
+                subprocess.run(["xdotool", "keyup", m], check=True)
+        else:
+            subprocess.run(["xdotool", "click", "1"], check=True)
     else:
         raise RuntimeError(f"Unsupported platform: {system}")
 
 
 def double_click_at(x, y):
+    x, y = int(x), int(y)
     system = platform.system()
     if system == "Darwin":
         if _cliclick_available():
             subprocess.run(["cliclick", f"dc:{x},{y}"], check=True)
         else:
-            click_at(x, y)
-            time.sleep(0.05)
-            click_at(x, y)
+            # Single subprocess for both clicks to ensure timing
+            _macos_mouse_events(
+                f"p=({x},{y})\n"
+                "for _ in range(2):\n"
+                "  e=Quartz.CGEventCreateMouseEvent(None,Quartz.kCGEventLeftMouseDown,p,Quartz.kCGMouseButtonLeft)\n"
+                "  Quartz.CGEventPost(Quartz.kCGHIDEventTap,e);time.sleep(0.01)\n"
+                "  e=Quartz.CGEventCreateMouseEvent(None,Quartz.kCGEventLeftMouseUp,p,Quartz.kCGMouseButtonLeft)\n"
+                "  Quartz.CGEventPost(Quartz.kCGHIDEventTap,e);time.sleep(0.05)\n"
+            )
     elif system == "Linux":
         subprocess.run(["xdotool", "mousemove", str(x), str(y)], check=True)
         time.sleep(0.1)
@@ -71,22 +137,21 @@ def double_click_at(x, y):
 
 
 def right_click_at(x, y):
+    x, y = int(x), int(y)
     system = platform.system()
     if system == "Darwin":
         if _cliclick_available():
             subprocess.run(["cliclick", f"rc:{x},{y}"], check=True)
         else:
-            subprocess.run([sys.executable, "-c", f"""
-import Quartz
-event = Quartz.CGEventCreateMouseEvent(None, Quartz.kCGEventMouseMoved, ({x}, {y}), Quartz.kCGMouseButtonRight)
-Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
-import time; time.sleep(0.05)
-event = Quartz.CGEventCreateMouseEvent(None, Quartz.kCGEventRightMouseDown, ({x}, {y}), Quartz.kCGMouseButtonRight)
-Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
-time.sleep(0.05)
-event = Quartz.CGEventCreateMouseEvent(None, Quartz.kCGEventRightMouseUp, ({x}, {y}), Quartz.kCGMouseButtonRight)
-Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
-"""], check=True)
+            _macos_mouse_events(
+                f"p=({x},{y})\n"
+                "e=Quartz.CGEventCreateMouseEvent(None,Quartz.kCGEventMouseMoved,p,Quartz.kCGMouseButtonRight)\n"
+                "Quartz.CGEventPost(Quartz.kCGHIDEventTap,e);time.sleep(0.05)\n"
+                "e=Quartz.CGEventCreateMouseEvent(None,Quartz.kCGEventRightMouseDown,p,Quartz.kCGMouseButtonRight)\n"
+                "Quartz.CGEventPost(Quartz.kCGHIDEventTap,e);time.sleep(0.05)\n"
+                "e=Quartz.CGEventCreateMouseEvent(None,Quartz.kCGEventRightMouseUp,p,Quartz.kCGMouseButtonRight)\n"
+                "Quartz.CGEventPost(Quartz.kCGHIDEventTap,e)\n"
+            )
     elif system == "Linux":
         subprocess.run(["xdotool", "mousemove", str(x), str(y)], check=True)
         time.sleep(0.1)
@@ -100,16 +165,13 @@ def main():
     ap.add_argument("--xy", help="Direct coordinates x,y")
     ap.add_argument("--double", action="store_true", help="Double click")
     ap.add_argument("--right", action="store_true", help="Right click")
+    ap.add_argument("--modifier", "-m", help="Modifier keys: cmd,shift,alt,ctrl (comma-separated)")
     args = ap.parse_args()
 
     if args.xy:
-        x, y = map(int, args.xy.split(","))
+        x, y = parse_xy(args.xy)
     elif args.index is not None:
-        if not os.path.exists(args.json):
-            print(f"ERROR: {args.json} not found. Run som-annotate first.", file=sys.stderr)
-            return 1
-        with open(args.json) as f:
-            elements = json.load(f)
+        elements, _meta = load_elements(args.json)
         matches = [e for e in elements if e["index"] == args.index]
         if not matches:
             print(f"ERROR: Element [{args.index}] not found. Max index: {max(e['index'] for e in elements)}", file=sys.stderr)
@@ -122,14 +184,17 @@ def main():
         ap.print_help()
         return 1
 
+    modifiers = _parse_modifiers(args.modifier)
+
     if args.double:
         double_click_at(x, y)
     elif args.right:
         right_click_at(x, y)
     else:
-        click_at(x, y)
+        click_at(x, y, modifiers=modifiers)
 
-    print(f"OK ({x},{y})")
+    mod_str = f" [{'+'.join(modifiers)}]" if modifiers else ""
+    print(f"OK ({x},{y}){mod_str}")
     return 0
 
 

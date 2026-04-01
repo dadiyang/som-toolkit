@@ -14,43 +14,20 @@ import os
 import platform
 import subprocess
 import sys
+import tempfile
 import time
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, SCRIPT_DIR)
 
+from som_common import find_omniparser, build_parser_config, bbox_to_elements, build_output_json
 
-def find_omniparser():
-    """Search for OmniParser in standard locations."""
-    candidates = [
-        os.environ.get("OMNIPARSER_DIR", ""),                          # env var (highest priority)
-        os.path.join(os.path.expanduser("~"), "data", "omniparser"),   # install.sh default
-        os.path.join(SCRIPT_DIR, "omniparser"),                        # legacy: symlink/subdir
-        os.path.join(SCRIPT_DIR, "..", "OmniParser"),                  # legacy: sibling dir
-        os.path.join(os.path.expanduser("~"), "OmniParser"),           # legacy: home dir
-    ]
-    for path in candidates:
-        if path and os.path.isfile(os.path.join(path, "util", "omniparser.py")):
-            return path
-    sys.exit(
-        "ERROR: OmniParser not found.\n"
-        "Run install.sh, or set OMNIPARSER_DIR=/path/to/omniparser"
-    )
-
-
-OMNI_DIR = find_omniparser()
 
 # ─── 截图 ───────────────────────────────────────────────
 def take_screenshot(output_path, max_width=1920):
-    """Take a screenshot, auto-resize and compress for efficiency.
-
-    HiDPI screens (e.g. 2880x1800) produce huge PNGs. This function:
-    1. Captures the raw screenshot
-    2. Resizes to max_width (default 1920) if larger
-    3. Saves as JPEG q85 if output ends in .jpg/.jpeg, otherwise PNG
-    """
+    """Take a screenshot, auto-resize and compress for efficiency."""
     from PIL import Image as PILImg
 
-    # Remove existing file to guarantee freshness
     if os.path.exists(output_path):
         os.remove(output_path)
 
@@ -58,8 +35,6 @@ def take_screenshot(output_path, max_width=1920):
 
     system = platform.system()
     if system == "Darwin":
-        # -m: main screen only (avoids multi-monitor merge)
-        # -x: no sound
         subprocess.run(["screencapture", "-x", "-m", raw_path], check=True)
     elif system == "Linux":
         display = os.environ.get("DISPLAY")
@@ -78,19 +53,16 @@ def take_screenshot(output_path, max_width=1920):
     if not os.path.exists(raw_path):
         sys.exit(f"ERROR: Screenshot failed. File not created: {raw_path}")
 
-    # Resize if needed
     img = PILImg.open(raw_path)
     if img.width > max_width:
         ratio = max_width / img.width
         img = img.resize((max_width, int(img.height * ratio)), PILImg.LANCZOS)
 
-    # Save (JPEG for .jpg, PNG otherwise)
     if output_path.lower().endswith(('.jpg', '.jpeg')):
         img.save(output_path, quality=85)
     else:
         img.save(output_path)
 
-    # Clean up raw
     if os.path.exists(raw_path):
         os.remove(raw_path)
 
@@ -99,19 +71,13 @@ def take_screenshot(output_path, max_width=1920):
 
 
 def get_screen_size():
-    """Get LOGICAL screen size (what mouse coordinates use).
-
-    macOS Retina: screencapture outputs physical pixels (e.g. 5120x2880)
-    but mouse coordinates use logical pixels (e.g. 2560x1440).
-    This function returns LOGICAL size so bbox→coordinate mapping is correct.
-    """
+    """Get LOGICAL screen size (what mouse coordinates use)."""
     system = platform.system()
     if system == "Darwin":
         out = subprocess.check_output([
             sys.executable, "-c",
             "import AppKit; s=AppKit.NSScreen.mainScreen().frame().size; print(int(s.width), int(s.height))"
         ]).decode().strip().split()
-        # AppKit frame().size returns LOGICAL pixels — correct for mouse coords
         return int(out[0]), int(out[1])
     elif system == "Linux":
         out = subprocess.check_output(["xdotool", "getdisplaygeometry"]).decode().strip().split()
@@ -121,26 +87,11 @@ def get_screen_size():
 
 # ─── OmniParser ────────────────────────────────────────
 def load_parser(use_caption=True):
-    sys.path.insert(0, OMNI_DIR)
+    omni_dir, config = build_parser_config(use_caption=use_caption)
+    sys.path.insert(0, omni_dir)
     os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
 
     from util.omniparser import Omniparser
-
-    default_weights = os.path.join(os.path.expanduser("~"), "data", "models", "omniparser")
-    weights_dir = os.environ.get("SOM_WEIGHTS_DIR", default_weights)
-    # Fallback: check legacy location inside omniparser source
-    if not os.path.isdir(os.path.join(weights_dir, "icon_detect")):
-        legacy = os.path.join(OMNI_DIR, "weights")
-        if os.path.isdir(os.path.join(legacy, "icon_detect")):
-            weights_dir = legacy
-
-    config = {
-        "som_model_path": os.path.join(weights_dir, "icon_detect", "model.pt"),
-        "caption_model_name": "florence2",
-        "caption_model_path": os.path.join(weights_dir, "icon_caption_florence"),
-        "BOX_TRESHOLD": 0.05,
-        "use_caption": use_caption,
-    }
     return Omniparser(config)
 
 
@@ -148,9 +99,6 @@ def parse_screenshot(parser, image_path, screen_w, screen_h):
     from PIL import Image
 
     img = Image.open(image_path)
-    orig_w, orig_h = img.size
-
-    # Resize if too large (saves memory and time)
     MAX_W = 1920
     if img.width > MAX_W:
         ratio = MAX_W / img.width
@@ -161,27 +109,7 @@ def parse_screenshot(parser, image_path, screen_w, screen_h):
     img_b64 = base64.b64encode(buf.getvalue()).decode()
 
     labeled_b64, parsed_content = parser.parse(img_b64)
-
-    # Convert bbox ratios to screen coordinates
-    elements = []
-    for idx, item in enumerate(parsed_content):
-        bbox = item["bbox"]  # [x1_ratio, y1_ratio, x2_ratio, y2_ratio]
-        cx = int((bbox[0] + bbox[2]) / 2 * screen_w)
-        cy = int((bbox[1] + bbox[3]) / 2 * screen_h)
-        w = int((bbox[2] - bbox[0]) * screen_w)
-        h = int((bbox[3] - bbox[1]) * screen_h)
-
-        elements.append({
-            "index": idx,
-            "type": item.get("type", ""),
-            "content": item.get("content", ""),
-            "interactivity": item.get("interactivity", False),
-            "center_x": cx,
-            "center_y": cy,
-            "width": w,
-            "height": h,
-            "bbox_ratio": bbox,
-        })
+    elements = bbox_to_elements(parsed_content, screen_w, screen_h)
 
     return labeled_b64, elements
 
@@ -191,43 +119,45 @@ def try_server(image_path, screen_w, screen_h, quiet=False):
     """Try to use som-server for fast parsing. Returns None if server not available."""
     try:
         import urllib.request
-        # Health check
+
         resp = urllib.request.urlopen("http://127.0.0.1:8765/health", timeout=2)
         if resp.read() != b"ok":
             return None
-    except Exception:
+
+        if not quiet:
+            print("Using som-server (fast mode)...", file=sys.stderr)
+
+        from PIL import Image as PILImage
+
+        img = PILImage.open(image_path)
+        MAX_W = 1920
+        if img.width > MAX_W:
+            ratio = MAX_W / img.width
+            img = img.resize((MAX_W, int(img.height * ratio)), PILImage.LANCZOS)
+
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        img_b64 = base64.b64encode(buf.getvalue()).decode()
+
+        req_data = json.dumps({
+            "image_base64": img_b64,
+            "screen_w": screen_w,
+            "screen_h": screen_h,
+        }).encode()
+
+        req = urllib.request.Request(
+            "http://127.0.0.1:8765/parse",
+            data=req_data,
+            headers={"Content-Type": "application/json"}
+        )
+        resp = urllib.request.urlopen(req, timeout=300)
+        result = json.loads(resp.read())
+
+        return result["labeled_image_base64"], result["elements"]
+    except Exception as e:
+        if not quiet:
+            print(f"som-server unavailable: {e}", file=sys.stderr)
         return None
-
-    if not quiet:
-        print("Using som-server (fast mode)...", file=sys.stderr)
-
-    from PIL import Image as PILImage
-
-    img = PILImage.open(image_path)
-    MAX_W = 1920
-    if img.width > MAX_W:
-        ratio = MAX_W / img.width
-        img = img.resize((MAX_W, int(img.height * ratio)), PILImage.LANCZOS)
-
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    img_b64 = base64.b64encode(buf.getvalue()).decode()
-
-    req_data = json.dumps({
-        "image_base64": img_b64,
-        "screen_w": screen_w,
-        "screen_h": screen_h,
-    }).encode()
-
-    req = urllib.request.Request(
-        "http://127.0.0.1:8765/parse",
-        data=req_data,
-        headers={"Content-Type": "application/json"}
-    )
-    resp = urllib.request.urlopen(req, timeout=300)
-    result = json.loads(resp.read())
-
-    return result["labeled_image_base64"], result["elements"]
 
 
 # ─── Main ──────────────────────────────────────────────
@@ -247,8 +177,11 @@ def main():
         print(f"Screen: {screen_w}x{screen_h}", file=sys.stderr)
 
     # Screenshot
-    raw_path = args.screenshot or "/tmp/som_raw_screenshot.png"
-    if not args.screenshot:
+    if args.screenshot:
+        raw_path = args.screenshot
+    else:
+        fd, raw_path = tempfile.mkstemp(suffix=".png", prefix="som_screenshot_")
+        os.close(fd)
         if args.wait > 0:
             time.sleep(args.wait)
         if not args.quiet:
@@ -273,7 +206,11 @@ def main():
 
     elapsed = time.time() - t0
 
-    # Save annotated image (JPEG if .jpg extension, smaller files)
+    # Clean up temp screenshot
+    if not args.screenshot and os.path.exists(raw_path):
+        os.remove(raw_path)
+
+    # Save annotated image
     from PIL import Image
     labeled_img = Image.open(io.BytesIO(base64.b64decode(labeled_b64)))
     if args.output.lower().endswith(('.jpg', '.jpeg')):
@@ -281,9 +218,10 @@ def main():
     else:
         labeled_img.save(args.output)
 
-    # Save elements JSON
+    # Save elements JSON with meta
+    output_data = build_output_json(elements, screen_w, screen_h)
     with open(args.json, "w", encoding="utf-8") as f:
-        json.dump(elements, f, ensure_ascii=False, indent=2)
+        json.dump(output_data, f, ensure_ascii=False, indent=2)
 
     if not args.quiet:
         print(f"Detected {len(elements)} elements in {elapsed:.1f}s", file=sys.stderr)

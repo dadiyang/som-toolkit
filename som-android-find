@@ -7,6 +7,7 @@ som-android-find: 从 Android SoM 元素中搜索（委托给 som-find）
     som-android-find "价格" --extract -j page.json
 """
 import os
+import re
 import subprocess
 import sys
 
@@ -16,8 +17,8 @@ if __name__ == "__main__":
     som_find = os.path.join(SCRIPT_DIR, "som-find")
     result = subprocess.run([sys.executable, som_find] + sys.argv[1:],
                             capture_output=True, text=True)
-    # Replace desktop som-click with som-android-click in --cmd output
-    stdout = result.stdout.replace("som-click ", "som-android-click ")
+    # Replace desktop som-click with som-android-click in --cmd output (line-start only)
+    stdout = re.sub(r'^som-click ', 'som-android-click ', result.stdout, flags=re.MULTILINE)
     sys.stdout.write(stdout)
     sys.stderr.write(result.stderr)
     sys.exit(result.returncode)

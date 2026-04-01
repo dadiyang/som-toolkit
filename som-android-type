@@ -14,34 +14,21 @@ import subprocess
 import sys
 import time
 
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, SCRIPT_DIR)
 
-def get_device():
-    serial = os.environ.get("ADB_SERIAL", "")
-    if serial:
-        return ["-s", serial]
-    result = subprocess.run(["adb", "devices"], capture_output=True, text=True, timeout=10)
-    lines = [l for l in result.stdout.strip().split("\n")[1:] if l.strip() and "device" in l]
-    if len(lines) == 0:
-        sys.exit("ERROR: No ADB device connected.")
-    if len(lines) > 1:
-        sys.exit(f"ERROR: Multiple devices. Set ADB_SERIAL=<serial>\n{result.stdout}")
-    return []
-
-
-def adb(*args):
-    cmd = ["adb"] + get_device() + list(args)
-    return subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=30)
-
-
-def tap(x, y):
-    adb("shell", "input", "tap", str(x), str(y))
+from som_common import load_elements, parse_xy
+from som_android_common import adb, tap
 
 
 def input_text(text):
     """Input text via ADB. Uses ADB Keyboard for non-ASCII (Chinese etc)."""
     if all(ord(c) < 128 for c in text):
-        # ASCII: use input text, only replace spaces with %s for adb input text syntax
-        escaped = text.replace(" ", "%s")
+        # ASCII: escape shell special characters
+        escaped = text.replace("\\", "\\\\")
+        for ch in "&()[]{}|;<>*$`\"'~#":
+            escaped = escaped.replace(ch, f"\\{ch}")
+        escaped = escaped.replace(" ", "%s")
         adb("shell", "input", "text", escaped)
     else:
         # Non-ASCII: use ADB Keyboard broadcast
@@ -50,10 +37,8 @@ def input_text(text):
 
 def clear_field():
     """Select all and delete."""
-    # Ctrl+A select all (works on most text fields)
     adb("shell", "input", "keyevent", "KEYCODE_MOVE_END")
     time.sleep(0.1)
-    # Use shift+home to select all from end to beginning
     adb("shell", "input", "keycombination", "KEYCODE_SHIFT_LEFT", "KEYCODE_MOVE_HOME")
     time.sleep(0.1)
     adb("shell", "input", "keyevent", "KEYCODE_DEL")
@@ -72,8 +57,7 @@ def main():
 
     # Key-only mode (no click needed)
     if args.key and args.index is None and not args.xy:
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        subprocess.run([sys.executable, os.path.join(script_dir, "som-android-key"), args.key], check=True)
+        subprocess.run([sys.executable, os.path.join(SCRIPT_DIR, "som-android-key"), args.key], check=True)
         return 0
 
     # Direct text input without clicking
@@ -84,13 +68,9 @@ def main():
 
     # Determine click target
     if args.xy:
-        x, y = map(int, args.xy.split(","))
+        x, y = parse_xy(args.xy)
     elif args.index is not None:
-        if not os.path.exists(args.json):
-            print(f"ERROR: {args.json} not found. Run som-android-annotate first.", file=sys.stderr)
-            return 1
-        with open(args.json) as f:
-            elements = json.load(f)
+        elements, _meta = load_elements(args.json)
         matches = [e for e in elements if e["index"] == args.index]
         if not matches:
             print(f"ERROR: Element [{args.index}] not found.", file=sys.stderr)
@@ -112,8 +92,7 @@ def main():
 
     # Type or press key
     if args.key:
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        subprocess.run([sys.executable, os.path.join(script_dir, "som-android-key"), args.key], check=True)
+        subprocess.run([sys.executable, os.path.join(SCRIPT_DIR, "som-android-key"), args.key], check=True)
         print(f"Key: {args.key} at ({x},{y})")
     elif args.text:
         input_text(args.text)

@@ -50,6 +50,9 @@ JSON 结构示例：
 som-click 42                    # 单击编号 42
 som-click 42 --double           # 双击
 som-click 42 --right            # 右键
+som-click 42 -m cmd             # Cmd+Click（新标签打开链接）
+som-click 42 -m shift           # Shift+Click
+som-click 42 -m cmd,shift       # 多修饰键组合
 som-click --xy 500,300          # 直接坐标点击（调试用）
 ```
 

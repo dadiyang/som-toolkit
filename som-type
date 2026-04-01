@@ -16,12 +16,20 @@ import subprocess
 import sys
 import time
 
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, SCRIPT_DIR)
+
+from som_common import load_elements, parse_xy
+
 
 def click_at(x, y):
     """Delegate to som-click for consistent cross-platform behavior."""
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    subprocess.run([sys.executable, os.path.join(script_dir, "som-click"), "--xy", f"{x},{y}"],
-                   check=True, capture_output=True)
+    result = subprocess.run(
+        [sys.executable, os.path.join(SCRIPT_DIR, "som-click"), "--xy", f"{x},{y}"],
+        check=True, capture_output=True, text=True
+    )
+    if result.stderr:
+        print(result.stderr, file=sys.stderr, end="")
 
 
 def set_clipboard(text):
@@ -37,7 +45,6 @@ def set_clipboard(text):
 
 def type_text(text):
     system = platform.system()
-    # Most reliable method: clipboard + paste (works for all text, all platforms)
     set_clipboard(text)
     time.sleep(0.1)
     if system == "Darwin":
@@ -60,7 +67,6 @@ def press_key(key_combo):
             "alt": "option down",
             "shift": "shift down",
         }
-        # macOS key codes for special keys
         special_key_codes = {
             "return": 36, "enter": 36, "tab": 48,
             "escape": 53, "delete": 51, "backspace": 51,
@@ -105,13 +111,9 @@ def main():
 
     # Determine click target
     if args.xy:
-        x, y = map(int, args.xy.split(","))
+        x, y = parse_xy(args.xy)
     elif args.index is not None:
-        if not os.path.exists(args.json):
-            print(f"ERROR: {args.json} not found. Run som-annotate first.", file=sys.stderr)
-            return 1
-        with open(args.json) as f:
-            elements = json.load(f)
+        elements, _meta = load_elements(args.json)
         matches = [e for e in elements if e["index"] == args.index]
         if not matches:
             print(f"ERROR: Element [{args.index}] not found.", file=sys.stderr)

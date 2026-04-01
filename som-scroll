@@ -34,11 +34,13 @@ def scroll(direction, count=1, lines=0):
     system = platform.system()
 
     if direction in ("top", "bottom"):
-        # Home/End — always full page jump
         if system == "Darwin":
             code = {"top": 115, "bottom": 119}[direction]
-            subprocess.run(["osascript", "-e",
-                f'tell application "System Events" to key code {code}'], check=False)
+            result = subprocess.run(["osascript", "-e",
+                f'tell application "System Events" to key code {code}'],
+                capture_output=True, text=True)
+            if result.returncode != 0:
+                print(f"WARNING: macOS key event failed. Check Accessibility permissions.", file=sys.stderr)
         elif system == "Linux":
             key = {"top": "Home", "bottom": "End"}[direction]
             subprocess.run(["xdotool", "key", key], check=True)
@@ -46,35 +48,33 @@ def scroll(direction, count=1, lines=0):
         return
 
     if lines > 0:
-        # Fine scroll using mouse wheel events
-        wheel_dir = 5 if direction == "down" else 4  # X11: 5=down, 4=up
+        wheel_dir = 5 if direction == "down" else 4
         for _ in range(count):
             pixels = lines * PIXELS_PER_LINE
             if system == "Darwin":
-                # CGEvent pixel-level scroll — exact and reliable on macOS
-                # kCGScrollEventUnitPixel (0) for precise control
-                # Negative = scroll down, positive = scroll up
                 delta = -pixels if direction == "down" else pixels
-                subprocess.run([sys.executable, "-c", f"""
-import Quartz
-event = Quartz.CGEventCreateScrollWheelEvent(None, Quartz.kCGScrollEventUnitPixel, 1, {delta})
-Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
-"""], check=True)
+                result = subprocess.run([sys.executable, "-c",
+                    f"import Quartz\n"
+                    f"e=Quartz.CGEventCreateScrollWheelEvent(None,Quartz.kCGScrollEventUnitPixel,1,{int(delta)})\n"
+                    f"Quartz.CGEventPost(Quartz.kCGHIDEventTap,e)\n"
+                ], capture_output=True, text=True)
+                if result.returncode != 0:
+                    print(f"WARNING: macOS scroll failed: {result.stderr.strip()}", file=sys.stderr)
             elif system == "Linux":
-                # xdotool click 5/4 = one wheel tick ≈ 3 text lines ≈ 45px
-                # Scale to match PIXELS_PER_LINE
                 ticks = max(1, pixels // 45)
                 for _ in range(ticks):
                     subprocess.run(["xdotool", "click", str(wheel_dir)], check=True)
                     time.sleep(0.05)
             time.sleep(0.3)
     else:
-        # Full page scroll
         if system == "Darwin":
             code = 121 if direction == "down" else 116
             for _ in range(count):
-                subprocess.run(["osascript", "-e",
-                    f'tell application "System Events" to key code {code}'], check=False)
+                result = subprocess.run(["osascript", "-e",
+                    f'tell application "System Events" to key code {code}'],
+                    capture_output=True, text=True)
+                if result.returncode != 0:
+                    print(f"WARNING: macOS key event failed. Check Accessibility permissions.", file=sys.stderr)
                 time.sleep(0.5)
         elif system == "Linux":
             key = "Page_Down" if direction == "down" else "Page_Up"
@@ -99,20 +99,20 @@ def annotate(output_prefix, json_path):
 
 def merge_elements(all_elements_files):
     """Merge elements from multiple viewport captures, deduplicating by position."""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from som_common import load_elements
+
     all_elements = []
     seen = set()
 
     for fpath in all_elements_files:
-        with open(fpath) as f:
-            elements = json.load(f)
+        elements, _meta = load_elements(fpath)
         for e in elements:
-            # Dedup by approximate position (within 30px)
             key = (e["center_x"] // 30, e["center_y"] // 30, e.get("content", "")[:20])
             if key not in seen:
                 seen.add(key)
                 all_elements.append(e)
 
-    # Re-index
     for i, e in enumerate(all_elements):
         e["index"] = i
 
@@ -132,7 +132,6 @@ def main():
     args = ap.parse_args()
 
     if args.collect:
-        # Collect mode: scroll and annotate multiple viewports, then merge
         temp_files = []
         for i in range(args.count):
             if i > 0:
@@ -145,14 +144,12 @@ def main():
             annotate(temp_prefix, temp_json)
             temp_files.append(temp_json)
 
-        # Merge
         merged = merge_elements(temp_files)
         with open(args.json, "w") as f:
             json.dump(merged, f, ensure_ascii=False, indent=2)
         print(f"Merged {len(merged)} unique elements from {args.count} viewports", file=sys.stderr)
 
     else:
-        # Simple scroll
         scroll(args.direction, args.count, lines=args.lines)
         mode = f"{args.lines} lines" if args.lines > 0 else "page"
         print(f"Scrolled {args.direction} x{args.count} ({mode})", file=sys.stderr)

@@ -17,50 +17,27 @@ import os
 import signal
 import sys
 import time
+import traceback
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-PID_FILE = os.path.join(SCRIPT_DIR, ".som-server.pid")
+sys.path.insert(0, SCRIPT_DIR)
+
+RUNTIME_DIR = os.environ.get("XDG_RUNTIME_DIR", "/tmp")
+PID_FILE = os.path.join(RUNTIME_DIR, "som-server.pid")
+LOG_PATH = os.path.join(RUNTIME_DIR, "som-server.log")
 DEFAULT_PORT = 8765
-
-
-def find_omniparser():
-    candidates = [
-        os.environ.get("OMNIPARSER_DIR", ""),
-        os.path.join(os.path.expanduser("~"), "data", "omniparser"),
-        os.path.join(SCRIPT_DIR, "omniparser"),
-        os.path.join(SCRIPT_DIR, "..", "OmniParser"),
-        os.path.join(os.path.expanduser("~"), "OmniParser"),
-    ]
-    for path in candidates:
-        if path and os.path.isfile(os.path.join(path, "util", "omniparser.py")):
-            return path
-    sys.exit("ERROR: OmniParser not found. Run install.sh first.")
+MAX_BODY_SIZE = 100 * 1024 * 1024  # 100MB
 
 
 def start_server(port, use_caption=True):
     from http.server import HTTPServer, BaseHTTPRequestHandler
+    from som_common import find_omniparser, build_parser_config, bbox_to_elements
 
-    omni_dir = find_omniparser()
+    omni_dir, config = build_parser_config(use_caption=use_caption)
     sys.path.insert(0, omni_dir)
     os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
 
     from util.omniparser import Omniparser
-    from PIL import Image
-
-    default_weights = os.path.join(os.path.expanduser("~"), "data", "models", "omniparser")
-    weights_dir = os.environ.get("SOM_WEIGHTS_DIR", default_weights)
-    if not os.path.isdir(os.path.join(weights_dir, "icon_detect")):
-        legacy = os.path.join(omni_dir, "weights")
-        if os.path.isdir(os.path.join(legacy, "icon_detect")):
-            weights_dir = legacy
-
-    config = {
-        "som_model_path": os.path.join(weights_dir, "icon_detect", "model.pt"),
-        "caption_model_name": "florence2",
-        "caption_model_path": os.path.join(weights_dir, "icon_caption_florence"),
-        "BOX_TRESHOLD": 0.05,
-        "use_caption": use_caption,
-    }
 
     print("Loading OmniParser model...", flush=True)
     t0 = time.time()
@@ -70,71 +47,82 @@ def start_server(port, use_caption=True):
     class Handler(BaseHTTPRequestHandler):
         def do_POST(self):
             if self.path == "/parse":
-                content_length = int(self.headers["Content-Length"])
-                body = self.rfile.read(content_length)
-                req = json.loads(body)
+                try:
+                    content_length = int(self.headers.get("Content-Length", 0))
+                    if content_length <= 0:
+                        self._send_error(400, "Missing or invalid Content-Length")
+                        return
+                    if content_length > MAX_BODY_SIZE:
+                        self._send_error(413, f"Request too large ({content_length} bytes, max {MAX_BODY_SIZE})")
+                        return
 
-                img_b64 = req["image_base64"]
-                screen_w = req.get("screen_w", 2880)
-                screen_h = req.get("screen_h", 1800)
+                    body = self.rfile.read(content_length)
+                    req = json.loads(body)
 
-                t0 = time.time()
-                labeled_b64, parsed_content = parser.parse(img_b64)
-                elapsed = time.time() - t0
+                    img_b64 = req["image_base64"]
+                    screen_w = req.get("screen_w", 1920)
+                    screen_h = req.get("screen_h", 1080)
 
-                # Convert bbox ratios to screen coordinates
-                elements = []
-                for idx, item in enumerate(parsed_content):
-                    bbox = item["bbox"]
-                    cx = int((bbox[0] + bbox[2]) / 2 * screen_w)
-                    cy = int((bbox[1] + bbox[3]) / 2 * screen_h)
-                    w = int((bbox[2] - bbox[0]) * screen_w)
-                    h = int((bbox[3] - bbox[1]) * screen_h)
-                    elements.append({
-                        "index": idx,
-                        "type": item.get("type", ""),
-                        "content": item.get("content", ""),
-                        "interactivity": item.get("interactivity", False),
-                        "center_x": cx, "center_y": cy,
-                        "width": w, "height": h,
-                        "bbox_ratio": bbox,
-                    })
+                    t0 = time.time()
+                    labeled_b64, parsed_content = parser.parse(img_b64)
+                    elapsed = time.time() - t0
 
-                response = json.dumps({
-                    "labeled_image_base64": labeled_b64,
-                    "elements": elements,
-                    "elapsed": elapsed,
-                }, ensure_ascii=False)
+                    elements = bbox_to_elements(parsed_content, screen_w, screen_h)
 
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json")
-                self.end_headers()
-                self.wfile.write(response.encode())
+                    resp_bytes = json.dumps({
+                        "labeled_image_base64": labeled_b64,
+                        "elements": elements,
+                        "elapsed": elapsed,
+                    }, ensure_ascii=False).encode()
+
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(resp_bytes)))
+                    self.end_headers()
+                    self.wfile.write(resp_bytes)
+
+                except (json.JSONDecodeError, KeyError, ValueError) as e:
+                    self._send_error(400, f"Bad request: {e}")
+                except Exception as e:
+                    traceback.print_exc()
+                    self._send_error(500, f"Internal error: {e}")
 
             elif self.path == "/health":
-                self.send_response(200)
-                self.end_headers()
-                self.wfile.write(b"ok")
+                self._send_ok(b"ok")
             else:
                 self.send_response(404)
                 self.end_headers()
 
         def do_GET(self):
             if self.path == "/health":
-                self.send_response(200)
-                self.end_headers()
-                self.wfile.write(b"ok")
+                self._send_ok(b"ok")
             else:
                 self.send_response(404)
                 self.end_headers()
 
-        def log_message(self, format, *args):
-            elapsed_str = ""
-            if hasattr(self, '_elapsed'):
-                elapsed_str = f" [{self._elapsed:.1f}s]"
-            sys.stderr.write(f"[som-server] {args[0]}{elapsed_str}\n")
+        def _send_ok(self, body):
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
 
-    server = HTTPServer(("127.0.0.1", port), Handler)
+        def _send_error(self, code, message):
+            resp_bytes = json.dumps({"error": message}).encode()
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(resp_bytes)))
+            self.end_headers()
+            self.wfile.write(resp_bytes)
+
+        def log_message(self, format, *args):
+            sys.stderr.write(f"[som-server] {args[0]}\n")
+
+    try:
+        server = HTTPServer(("127.0.0.1", port), Handler)
+    except OSError as e:
+        print(f"ERROR: Cannot bind port {port}: {e}", file=sys.stderr)
+        print(f"Try: som-server start --port {port + 1}", file=sys.stderr)
+        sys.exit(1)
 
     # Save PID
     with open(PID_FILE, "w") as f:
@@ -201,27 +189,6 @@ def main():
             print(f"Already running (PID {pid})")
             return 1
 
-        # Check port availability
-        import socket
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        try:
-            sock.bind(("127.0.0.1", args.port))
-            sock.close()
-        except OSError:
-            print(f"ERROR: Port {args.port} is already in use.")
-            print(f"Try: som-server start --port {args.port + 1}")
-            # Try to find a free port
-            for p in range(args.port + 1, args.port + 10):
-                try:
-                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                    sock.bind(("127.0.0.1", p))
-                    sock.close()
-                    print(f"Available port: {p}")
-                    break
-                except OSError:
-                    continue
-            return 1
-
         if args.foreground:
             start_server(args.port, use_caption=not args.no_caption)
         else:
@@ -230,16 +197,23 @@ def main():
             if child_pid == 0:
                 os.setsid()
                 # Redirect stdout/stderr to log
-                log_path = os.path.join(SCRIPT_DIR, "som-server.log")
-                log_fd = open(log_path, "a")
+                log_fd = open(LOG_PATH, "a")
                 os.dup2(log_fd.fileno(), sys.stdout.fileno())
                 os.dup2(log_fd.fileno(), sys.stderr.fileno())
+                log_fd.close()
                 start_server(args.port, use_caption=not args.no_caption)
             else:
-                # Wait a moment for the server to initialize
                 print(f"Starting som-server (PID {child_pid})...")
-                print(f"Model loading takes ~170s (CPU) or ~5s (GPU). Check: som-server status")
-                print(f"Log: {os.path.join(SCRIPT_DIR, 'som-server.log')}")
+                # Wait a few seconds to detect early crashes
+                for _ in range(10):
+                    time.sleep(0.5)
+                    try:
+                        os.kill(child_pid, 0)
+                    except OSError:
+                        print(f"ERROR: Server process exited. Check log: {LOG_PATH}")
+                        return 1
+                print(f"Server process running (PID {child_pid}). Model loading may still be in progress.")
+                print(f"Log: {LOG_PATH}")
         return 0
 
 
