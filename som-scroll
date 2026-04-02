@@ -15,72 +15,46 @@ som-scroll: 页面滚动 + 自动截图标注
 import argparse
 import json
 import os
-import platform
 import subprocess
 import sys
 import time
 
+import pyautogui
+
+pyautogui.FAILSAFE = False
+pyautogui.PAUSE = 0.05
 
 PIXELS_PER_LINE = 100  # 1 line = 100 logical pixels
+
+# pyautogui.scroll(n): 1 scroll unit ≈ ~45px on most platforms
+PIXELS_PER_SCROLL_UNIT = 45
 
 
 def scroll(direction, count=1, lines=0):
     """Scroll the page.
 
-    lines=0 (default): page scroll (Page_Down/Page_Up)
-    lines=N: fine scroll by N * 100px using pixel-level mouse wheel events.
-             1 line ≈ 100px (about 2-3 rows of text or 1 SKU option).
+    lines=0 (default): page scroll (Page_Down/Page_Up via keypress)
+    lines=N: fine scroll by N * 100px using mouse wheel.
     """
-    system = platform.system()
-
     if direction in ("top", "bottom"):
-        if system == "Darwin":
-            code = {"top": 115, "bottom": 119}[direction]
-            result = subprocess.run(["osascript", "-e",
-                f'tell application "System Events" to key code {code}'],
-                capture_output=True, text=True)
-            if result.returncode != 0:
-                print(f"WARNING: macOS key event failed. Check Accessibility permissions.", file=sys.stderr)
-        elif system == "Linux":
-            key = {"top": "Home", "bottom": "End"}[direction]
-            subprocess.run(["xdotool", "key", key], check=True)
+        pyautogui.press("home" if direction == "top" else "end")
         time.sleep(0.5)
         return
 
     if lines > 0:
-        wheel_dir = 5 if direction == "down" else 4
+        # Fine scroll: convert pixels to scroll units
+        pixels = lines * PIXELS_PER_LINE
+        units = max(1, pixels // PIXELS_PER_SCROLL_UNIT)
+        sign = -1 if direction == "down" else 1
         for _ in range(count):
-            pixels = lines * PIXELS_PER_LINE
-            if system == "Darwin":
-                delta = -pixels if direction == "down" else pixels
-                result = subprocess.run([sys.executable, "-c",
-                    f"import Quartz\n"
-                    f"e=Quartz.CGEventCreateScrollWheelEvent(None,Quartz.kCGScrollEventUnitPixel,1,{int(delta)})\n"
-                    f"Quartz.CGEventPost(Quartz.kCGHIDEventTap,e)\n"
-                ], capture_output=True, text=True)
-                if result.returncode != 0:
-                    print(f"WARNING: macOS scroll failed: {result.stderr.strip()}", file=sys.stderr)
-            elif system == "Linux":
-                ticks = max(1, pixels // 45)
-                for _ in range(ticks):
-                    subprocess.run(["xdotool", "click", str(wheel_dir)], check=True)
-                    time.sleep(0.05)
+            pyautogui.scroll(sign * units)
             time.sleep(0.3)
     else:
-        if system == "Darwin":
-            code = 121 if direction == "down" else 116
-            for _ in range(count):
-                result = subprocess.run(["osascript", "-e",
-                    f'tell application "System Events" to key code {code}'],
-                    capture_output=True, text=True)
-                if result.returncode != 0:
-                    print(f"WARNING: macOS key event failed. Check Accessibility permissions.", file=sys.stderr)
-                time.sleep(0.5)
-        elif system == "Linux":
-            key = "Page_Down" if direction == "down" else "Page_Up"
-            for _ in range(count):
-                subprocess.run(["xdotool", "key", key], check=True)
-                time.sleep(0.5)
+        # Full page scroll via keyboard
+        key = "pagedown" if direction == "down" else "pageup"
+        for _ in range(count):
+            pyautogui.press(key)
+            time.sleep(0.5)
 
 
 def annotate(output_prefix, json_path):
