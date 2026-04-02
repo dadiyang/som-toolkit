@@ -10,47 +10,31 @@ som-click: 根据 SoM 编号点击元素
     som-click 42 --modifier cmd,shift     # Cmd+Shift+Click
 """
 import argparse
-import json
 import os
 import platform
-import subprocess
 import sys
-import time
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIR)
 
 from som_common import load_elements, parse_xy
 
+import pyautogui
 
-_cliclick_cache = None
+pyautogui.FAILSAFE = False
+pyautogui.PAUSE = 0.05
 
-def _cliclick_available():
-    """Check if cliclick is installed (macOS mouse control tool). Cached."""
-    global _cliclick_cache
-    if _cliclick_cache is None:
-        try:
-            subprocess.run(["cliclick", "-V"], capture_output=True, check=True)
-            _cliclick_cache = True
-        except (FileNotFoundError, subprocess.CalledProcessError):
-            _cliclick_cache = False
-    return _cliclick_cache
-
-
-def _macos_mouse_events(events_code):
-    """Execute macOS CGEvent mouse operations in a subprocess."""
-    subprocess.run([sys.executable, "-c",
-        "import Quartz, time\n" + events_code
-    ], check=True)
-
-
-# Modifier key mappings per platform
-_CLICLICK_MOD = {"cmd": "cmd", "shift": "shift", "alt": "alt", "ctrl": "ctrl"}
-_XDOTOOL_MOD = {"cmd": "super", "shift": "shift", "alt": "alt", "ctrl": "ctrl"}
+# macOS uses 'command', Windows/Linux use 'win' for the Cmd key
+_MOD_MAP = {
+    "cmd": "command" if platform.system() == "Darwin" else "win",
+    "ctrl": "ctrl",
+    "shift": "shift",
+    "alt": "alt",
+}
 
 
 def _parse_modifiers(modifier_str):
-    """Parse comma-separated modifier string into list. Returns [] if None."""
+    """Parse comma-separated modifier string into pyautogui key names."""
     if not modifier_str:
         return []
     mods = [m.strip().lower() for m in modifier_str.split(",")]
@@ -59,103 +43,25 @@ def _parse_modifiers(modifier_str):
         if m not in valid:
             print(f"ERROR: Unknown modifier '{m}'. Valid: {', '.join(sorted(valid))}", file=sys.stderr)
             sys.exit(1)
-    return mods
+    return [_MOD_MAP[m] for m in mods]
 
 
 def click_at(x, y, modifiers=None):
     x, y = int(x), int(y)
     mods = modifiers or []
-    system = platform.system()
-    if system == "Darwin":
-        if _cliclick_available():
-            cmds = []
-            for m in mods:
-                cmds.append(f"kd:{_CLICLICK_MOD[m]}")
-            cmds.append(f"c:{x},{y}")
-            for m in mods:
-                cmds.append(f"ku:{_CLICLICK_MOD[m]}")
-            subprocess.run(["cliclick"] + cmds, check=True)
-        else:
-            # CGEvent: set modifier flags on the mouse events
-            flag_map = {
-                "cmd": "Quartz.kCGEventFlagMaskCommand",
-                "shift": "Quartz.kCGEventFlagMaskShift",
-                "alt": "Quartz.kCGEventFlagMaskAlternate",
-                "ctrl": "Quartz.kCGEventFlagMaskControl",
-            }
-            flags_expr = "|".join(flag_map[m] for m in mods) if mods else "0"
-            _macos_mouse_events(
-                f"p=({x},{y})\n"
-                f"flags={flags_expr}\n"
-                "e=Quartz.CGEventCreateMouseEvent(None,Quartz.kCGEventMouseMoved,p,Quartz.kCGMouseButtonLeft)\n"
-                "if flags:e.setFlags(flags)\n"
-                "Quartz.CGEventPost(Quartz.kCGHIDEventTap,e);time.sleep(0.05)\n"
-                "e=Quartz.CGEventCreateMouseEvent(None,Quartz.kCGEventLeftMouseDown,p,Quartz.kCGMouseButtonLeft)\n"
-                "if flags:e.setFlags(flags)\n"
-                "Quartz.CGEventPost(Quartz.kCGHIDEventTap,e);time.sleep(0.05)\n"
-                "e=Quartz.CGEventCreateMouseEvent(None,Quartz.kCGEventLeftMouseUp,p,Quartz.kCGMouseButtonLeft)\n"
-                "if flags:e.setFlags(flags)\n"
-                "Quartz.CGEventPost(Quartz.kCGHIDEventTap,e)\n"
-            )
-    elif system == "Linux":
-        subprocess.run(["xdotool", "mousemove", str(x), str(y)], check=True)
-        time.sleep(0.1)
-        if mods:
-            # xdotool keydown → click → keyup
-            xmods = [_XDOTOOL_MOD[m] for m in mods]
-            for m in xmods:
-                subprocess.run(["xdotool", "keydown", m], check=True)
-            subprocess.run(["xdotool", "click", "1"], check=True)
-            for m in xmods:
-                subprocess.run(["xdotool", "keyup", m], check=True)
-        else:
-            subprocess.run(["xdotool", "click", "1"], check=True)
-    else:
-        raise RuntimeError(f"Unsupported platform: {system}")
+    for m in mods:
+        pyautogui.keyDown(m)
+    pyautogui.click(x, y)
+    for m in mods:
+        pyautogui.keyUp(m)
 
 
 def double_click_at(x, y):
-    x, y = int(x), int(y)
-    system = platform.system()
-    if system == "Darwin":
-        if _cliclick_available():
-            subprocess.run(["cliclick", f"dc:{x},{y}"], check=True)
-        else:
-            # Single subprocess for both clicks to ensure timing
-            _macos_mouse_events(
-                f"p=({x},{y})\n"
-                "for _ in range(2):\n"
-                "  e=Quartz.CGEventCreateMouseEvent(None,Quartz.kCGEventLeftMouseDown,p,Quartz.kCGMouseButtonLeft)\n"
-                "  Quartz.CGEventPost(Quartz.kCGHIDEventTap,e);time.sleep(0.01)\n"
-                "  e=Quartz.CGEventCreateMouseEvent(None,Quartz.kCGEventLeftMouseUp,p,Quartz.kCGMouseButtonLeft)\n"
-                "  Quartz.CGEventPost(Quartz.kCGHIDEventTap,e);time.sleep(0.05)\n"
-            )
-    elif system == "Linux":
-        subprocess.run(["xdotool", "mousemove", str(x), str(y)], check=True)
-        time.sleep(0.1)
-        subprocess.run(["xdotool", "click", "--repeat", "2", "--delay", "50", "1"], check=True)
+    pyautogui.doubleClick(int(x), int(y))
 
 
 def right_click_at(x, y):
-    x, y = int(x), int(y)
-    system = platform.system()
-    if system == "Darwin":
-        if _cliclick_available():
-            subprocess.run(["cliclick", f"rc:{x},{y}"], check=True)
-        else:
-            _macos_mouse_events(
-                f"p=({x},{y})\n"
-                "e=Quartz.CGEventCreateMouseEvent(None,Quartz.kCGEventMouseMoved,p,Quartz.kCGMouseButtonRight)\n"
-                "Quartz.CGEventPost(Quartz.kCGHIDEventTap,e);time.sleep(0.05)\n"
-                "e=Quartz.CGEventCreateMouseEvent(None,Quartz.kCGEventRightMouseDown,p,Quartz.kCGMouseButtonRight)\n"
-                "Quartz.CGEventPost(Quartz.kCGHIDEventTap,e);time.sleep(0.05)\n"
-                "e=Quartz.CGEventCreateMouseEvent(None,Quartz.kCGEventRightMouseUp,p,Quartz.kCGMouseButtonRight)\n"
-                "Quartz.CGEventPost(Quartz.kCGHIDEventTap,e)\n"
-            )
-    elif system == "Linux":
-        subprocess.run(["xdotool", "mousemove", str(x), str(y)], check=True)
-        time.sleep(0.1)
-        subprocess.run(["xdotool", "click", "3"], check=True)
+    pyautogui.rightClick(int(x), int(y))
 
 
 def main():
@@ -193,7 +99,7 @@ def main():
     else:
         click_at(x, y, modifiers=modifiers)
 
-    mod_str = f" [{'+'.join(modifiers)}]" if modifiers else ""
+    mod_str = f" [{args.modifier}]" if args.modifier else ""
     print(f"OK ({x},{y}){mod_str}")
     return 0
 
