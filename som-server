@@ -142,14 +142,31 @@ def start_server(port, use_caption=True):
     server.serve_forever()
 
 
+def _pid_alive(pid):
+    """Check if a process is alive (cross-platform)."""
+    if sys.platform == "win32":
+        import ctypes
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.OpenProcess(0x100000, False, pid)  # SYNCHRONIZE
+        if handle:
+            kernel32.CloseHandle(handle)
+            return True
+        return False
+    else:
+        try:
+            os.kill(pid, 0)
+            return True
+        except OSError:
+            return False
+
+
 def get_pid():
     if os.path.exists(PID_FILE):
         with open(PID_FILE) as f:
             pid = int(f.read().strip())
-        try:
-            os.kill(pid, 0)
+        if _pid_alive(pid):
             return pid
-        except OSError:
+        else:
             os.remove(PID_FILE)
     return None
 
@@ -174,7 +191,11 @@ def main():
     elif args.action == "stop":
         pid = get_pid()
         if pid:
-            os.kill(pid, signal.SIGTERM)
+            if sys.platform == "win32":
+                import subprocess as sp
+                sp.run(["taskkill", "/PID", str(pid), "/F"], capture_output=True)
+            else:
+                os.kill(pid, signal.SIGTERM)
             print(f"Stopped (PID {pid})")
             time.sleep(1)
             if os.path.exists(PID_FILE):
@@ -192,28 +213,39 @@ def main():
         if args.foreground:
             start_server(args.port, use_caption=not args.no_caption)
         else:
-            # Daemonize
-            child_pid = os.fork()
-            if child_pid == 0:
-                os.setsid()
-                # Redirect stdout/stderr to log
+            if sys.platform == "win32":
+                # Windows: use subprocess with DETACHED_PROCESS
+                import subprocess as sp
+                cmd = [sys.executable, os.path.abspath(__file__),
+                       "start", "--foreground", "--port", str(args.port)]
+                if args.no_caption:
+                    cmd.append("--no-caption")
                 log_fd = open(LOG_PATH, "a")
-                os.dup2(log_fd.fileno(), sys.stdout.fileno())
-                os.dup2(log_fd.fileno(), sys.stderr.fileno())
+                proc = sp.Popen(
+                    cmd, stdout=log_fd, stderr=log_fd,
+                    creationflags=sp.DETACHED_PROCESS | sp.CREATE_NEW_PROCESS_GROUP,
+                )
                 log_fd.close()
-                start_server(args.port, use_caption=not args.no_caption)
+                child_pid = proc.pid
             else:
-                print(f"Starting som-server (PID {child_pid})...")
-                # Wait a few seconds to detect early crashes
-                for _ in range(10):
-                    time.sleep(0.5)
-                    try:
-                        os.kill(child_pid, 0)
-                    except OSError:
-                        print(f"ERROR: Server process exited. Check log: {LOG_PATH}")
-                        return 1
-                print(f"Server process running (PID {child_pid}). Model loading may still be in progress.")
-                print(f"Log: {LOG_PATH}")
+                # Unix: fork + setsid
+                child_pid = os.fork()
+                if child_pid == 0:
+                    os.setsid()
+                    log_fd = open(LOG_PATH, "a")
+                    os.dup2(log_fd.fileno(), sys.stdout.fileno())
+                    os.dup2(log_fd.fileno(), sys.stderr.fileno())
+                    log_fd.close()
+                    start_server(args.port, use_caption=not args.no_caption)
+
+            print(f"Starting som-server (PID {child_pid})...")
+            for _ in range(10):
+                time.sleep(0.5)
+                if not _pid_alive(child_pid):
+                    print(f"ERROR: Server process exited. Check log: {LOG_PATH}")
+                    return 1
+            print(f"Server process running (PID {child_pid}). Model loading may still be in progress.")
+            print(f"Log: {LOG_PATH}")
         return 0
 
 
