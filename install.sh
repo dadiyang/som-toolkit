@@ -48,25 +48,12 @@ pip install \
     Pillow \
     opencv-python-headless
 
-# 5. 安装平台特定的操控工具
-echo "Installing platform tools..."
-if [[ "$(uname)" == "Darwin" ]]; then
-    # macOS: pyobjc for CGEvent mouse control + Accessibility API
-    pip install pyobjc-framework-Cocoa pyobjc-framework-Quartz pyobjc-framework-ApplicationServices
-    # cliclick is the most reliable macOS mouse control tool
-    if ! command -v cliclick &>/dev/null; then
-        if command -v brew &>/dev/null; then
-            echo "Installing cliclick via Homebrew..."
-            brew install cliclick
-        else
-            echo "WARN: cliclick not found. Install Homebrew first, then: brew install cliclick"
-            echo "       Falling back to pyobjc CGEvent (also works but slower)"
-        fi
-    fi
-    # xclip equivalent for macOS is pbcopy/pbpaste (built-in)
-    echo "macOS: Using cliclick/CGEvent for clicking, pbcopy/pbpaste for clipboard"
-else
-    # Linux: xdotool + scrot
+# 5. 安装平台操控工具（统一用 pyautogui，三平台通用）
+echo "Installing UI automation tools..."
+pip install pyautogui pyperclip
+
+if [[ "$(uname)" == "Linux" ]]; then
+    # pyautogui on Linux needs xdotool and scrot as backends
     if ! command -v xdotool &>/dev/null; then
         echo "WARN: xdotool not found. Install with: sudo apt install xdotool"
     fi
