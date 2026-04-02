@@ -17,11 +17,13 @@
 | `som-tab` | 标签页切换 | `som-tab next` / `som-tab close` / `som-tab 2` |
 | `som-scroll` | 滚动页面 | `som-scroll down` (整页) / `som-scroll down --lines 3` (精细) |
 
-环境变量（Linux 必须设置）：
+支持平台：macOS / Linux / Windows（通过 pyautogui 统一三平台）。
+
+环境变量：
 ```bash
-export DISPLAY=:10.0
+export DISPLAY=:10.0              # Linux only
 export PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK=True
-export CUDA_VISIBLE_DEVICES=""  # CPU 模式，有 GPU 可去掉
+export CUDA_VISIBLE_DEVICES=""    # CPU 模式，有 GPU 可去掉
 ```
 
 ## 操作循环（必须严格遵守）
