@@ -25,7 +25,7 @@ source "$SCRIPT_DIR/venv/bin/activate"
 # 3. 安装 PyTorch (根据平台选择)
 echo "Installing PyTorch..."
 if [[ "$(uname)" == "Darwin" ]]; then
-    # macOS - MPS backend
+    # macOS - CPU only (MPS has kernel compatibility issues with OmniParser)
     pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
 elif command -v nvidia-smi &>/dev/null; then
     # Linux with NVIDIA GPU

@@ -23,8 +23,30 @@ def find_omniparser():
     )
 
 
+_force_cpu_applied = False
+
+def force_cpu():
+    """Force PyTorch to use CPU.
+
+    OmniParser auto-selects MPS on Apple Silicon, but ultralytics/easyocr
+    have MPS kernel compatibility issues causing runtime errors.
+    Patch torch.backends.mps.is_available to return False before OmniParser init.
+    """
+    global _force_cpu_applied
+    if _force_cpu_applied:
+        return
+    _force_cpu_applied = True
+
+    os.environ.setdefault("CUDA_VISIBLE_DEVICES", "")
+
+    import torch
+    if hasattr(torch.backends, "mps") and hasattr(torch.backends.mps, "is_available"):
+        torch.backends.mps.is_available = lambda: False
+
+
 def build_parser_config(use_caption=True):
     """Build OmniParser config dict with weights path resolution."""
+    force_cpu()
     omni_dir = find_omniparser()
 
     default_weights = os.path.join(os.path.expanduser("~"), "data", "models", "omniparser")
