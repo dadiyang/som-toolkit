@@ -11,8 +11,6 @@ import base64
 import io
 import json
 import os
-import platform
-import subprocess
 import sys
 import tempfile
 import time
@@ -26,34 +24,14 @@ from som_common import find_omniparser, build_parser_config, bbox_to_elements, b
 # ─── 截图 ───────────────────────────────────────────────
 def take_screenshot(output_path, max_width=1920):
     """Take a screenshot, auto-resize and compress for efficiency."""
+    import pyautogui
     from PIL import Image as PILImg
 
     if os.path.exists(output_path):
         os.remove(output_path)
 
-    raw_path = output_path + ".raw.png"
+    img = pyautogui.screenshot()
 
-    system = platform.system()
-    if system == "Darwin":
-        subprocess.run(["screencapture", "-x", "-m", raw_path], check=True)
-    elif system == "Linux":
-        display = os.environ.get("DISPLAY")
-        if not display:
-            for d in [":10.0", ":0"]:
-                try:
-                    subprocess.run(["xdotool", "getdisplaygeometry"],
-                                   env={**os.environ, "DISPLAY": d},
-                                   capture_output=True, check=True)
-                    os.environ["DISPLAY"] = d
-                    break
-                except (subprocess.CalledProcessError, FileNotFoundError):
-                    continue
-        subprocess.run(["scrot", raw_path], check=True)
-
-    if not os.path.exists(raw_path):
-        sys.exit(f"ERROR: Screenshot failed. File not created: {raw_path}")
-
-    img = PILImg.open(raw_path)
     if img.width > max_width:
         ratio = max_width / img.width
         img = img.resize((max_width, int(img.height * ratio)), PILImg.LANCZOS)
@@ -63,26 +41,14 @@ def take_screenshot(output_path, max_width=1920):
     else:
         img.save(output_path)
 
-    if os.path.exists(raw_path):
-        os.remove(raw_path)
-
     if not os.path.exists(output_path):
-        sys.exit(f"ERROR: Screenshot post-processing failed: {output_path}")
+        sys.exit(f"ERROR: Screenshot failed: {output_path}")
 
 
 def get_screen_size():
     """Get LOGICAL screen size (what mouse coordinates use)."""
-    system = platform.system()
-    if system == "Darwin":
-        out = subprocess.check_output([
-            sys.executable, "-c",
-            "import AppKit; s=AppKit.NSScreen.mainScreen().frame().size; print(int(s.width), int(s.height))"
-        ]).decode().strip().split()
-        return int(out[0]), int(out[1])
-    elif system == "Linux":
-        out = subprocess.check_output(["xdotool", "getdisplaygeometry"]).decode().strip().split()
-        return int(out[0]), int(out[1])
-    return 1920, 1080
+    import pyautogui
+    return pyautogui.size()
 
 
 # ─── OmniParser ────────────────────────────────────────
