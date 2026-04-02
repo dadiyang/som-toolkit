@@ -9,7 +9,6 @@ som-type: 点击元素后输入文字
     som-type --key "ctrl+a"               # 组合键
 """
 import argparse
-import json
 import os
 import platform
 import subprocess
@@ -20,6 +19,16 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIR)
 
 from som_common import load_elements, parse_xy
+
+import pyautogui
+import pyperclip
+
+pyautogui.FAILSAFE = False
+pyautogui.PAUSE = 0.05
+
+# Paste/select-all shortcut differs per platform
+_PASTE_MOD = "command" if platform.system() == "Darwin" else "ctrl"
+_SELECT_ALL_MOD = _PASTE_MOD
 
 
 def click_at(x, y):
@@ -33,64 +42,28 @@ def click_at(x, y):
 
 
 def set_clipboard(text):
-    """Cross-platform clipboard set."""
-    system = platform.system()
-    if system == "Darwin":
-        proc = subprocess.Popen(["pbcopy"], stdin=subprocess.PIPE)
-        proc.communicate(text.encode("utf-8"))
-    elif system == "Linux":
-        proc = subprocess.Popen(["xclip", "-selection", "clipboard"], stdin=subprocess.PIPE)
-        proc.communicate(text.encode("utf-8"))
+    pyperclip.copy(text)
 
 
 def type_text(text):
-    system = platform.system()
     set_clipboard(text)
     time.sleep(0.1)
-    if system == "Darwin":
-        subprocess.run(["osascript", "-e",
-            'tell application "System Events" to keystroke "v" using command down'], check=True)
-    elif system == "Linux":
-        subprocess.run(["xdotool", "key", "ctrl+v"], check=True)
+    pyautogui.hotkey(_PASTE_MOD, 'v')
 
 
 def press_key(key_combo):
-    system = platform.system()
-    if system == "Darwin":
-        parts = key_combo.lower().split("+")
-        actual_key = parts[-1]
-        modifiers = parts[:-1]
-
-        mod_map = {
-            "ctrl": "control down",
-            "cmd": "command down",
-            "alt": "option down",
-            "shift": "shift down",
-        }
-        special_key_codes = {
-            "return": 36, "enter": 36, "tab": 48,
-            "escape": 53, "delete": 51, "backspace": 51,
-            "up": 126, "down": 125, "left": 123, "right": 124,
-            "space": 49, "page_down": 121, "page_up": 116,
-            "home": 115, "end": 119, "f5": 96,
-        }
-
-        mod_str = ", ".join(mod_map.get(m, m) for m in modifiers)
-
-        if actual_key in special_key_codes:
-            code = special_key_codes[actual_key]
-            if mod_str:
-                script = f'tell application "System Events" to key code {code} using {{{mod_str}}}'
-            else:
-                script = f'tell application "System Events" to key code {code}'
-        else:
-            if mod_str:
-                script = f'tell application "System Events" to keystroke "{actual_key}" using {{{mod_str}}}'
-            else:
-                script = f'tell application "System Events" to keystroke "{actual_key}"'
-        subprocess.run(["osascript", "-e", script], check=True)
-    elif system == "Linux":
-        subprocess.run(["xdotool", "key", key_combo], check=True)
+    """Press a key combination like 'ctrl+a' or 'Return'."""
+    parts = key_combo.lower().split("+")
+    if len(parts) == 1:
+        key = parts[0]
+        key_map = {"return": "enter", "escape": "esc", "delete": "backspace",
+                   "page_down": "pagedown", "page_up": "pageup"}
+        pyautogui.press(key_map.get(key, key))
+    else:
+        mod_map = {"cmd": "command" if platform.system() == "Darwin" else "ctrl",
+                   "ctrl": "ctrl", "alt": "alt", "shift": "shift"}
+        keys = [mod_map.get(k, k) for k in parts]
+        pyautogui.hotkey(*keys)
 
 
 def main():
@@ -130,10 +103,7 @@ def main():
 
     # Clear if requested
     if args.clear:
-        if platform.system() == "Darwin":
-            press_key("cmd+a")
-        else:
-            press_key("ctrl+a")
+        pyautogui.hotkey(_SELECT_ALL_MOD, 'a')
         time.sleep(0.1)
 
     # Type or press key
