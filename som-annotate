@@ -24,6 +24,9 @@ from som_common import find_omniparser, build_parser_config, bbox_to_elements, b
 # ─── 截图 ───────────────────────────────────────────────
 def take_screenshot(output_path, max_width=1920):
     """Take a screenshot, auto-resize and compress for efficiency."""
+    if sys.platform == "linux" and not os.environ.get("DISPLAY"):
+        sys.exit("ERROR: DISPLAY not set. Run: export DISPLAY=:10.0")
+
     import pyautogui
     from PIL import Image as PILImg
 

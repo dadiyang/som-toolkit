@@ -26,7 +26,7 @@ pyautogui.PAUSE = 0.05
 
 PIXELS_PER_LINE = 100  # 1 line = 100 logical pixels
 
-# pyautogui.scroll(n): 1 scroll unit ≈ ~45px on most platforms
+# pyautogui.scroll(n): 1 unit ≈ ~45px (varies by OS/browser, tested on Linux)
 PIXELS_PER_SCROLL_UNIT = 45
 
 

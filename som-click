@@ -26,7 +26,7 @@ pyautogui.PAUSE = 0.05
 
 # macOS uses 'command', Windows/Linux use 'win' for the Cmd key
 _MOD_MAP = {
-    "cmd": "command" if platform.system() == "Darwin" else "win",
+    "cmd": "command" if platform.system() == "Darwin" else "ctrl",
     "ctrl": "ctrl",
     "shift": "shift",
     "alt": "alt",

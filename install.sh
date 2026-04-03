@@ -2,6 +2,7 @@
 # SoM Toolkit 安装脚本
 # 跨平台：Linux / macOS (Intel & Apple Silicon)
 set -e
+# Note: This script is for macOS/Linux. Windows users: pip install the dependencies manually.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 echo "=== SoM Toolkit Installer ==="

@@ -35,7 +35,7 @@ def click_at(x, y):
     """Delegate to som-click for consistent cross-platform behavior."""
     result = subprocess.run(
         [sys.executable, os.path.join(SCRIPT_DIR, "som-click"), "--xy", f"{x},{y}"],
-        check=True, capture_output=True, text=True
+        check=True, capture_output=True, text=True, timeout=10
     )
     if result.stderr:
         print(result.stderr, file=sys.stderr, end="")

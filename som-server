@@ -135,8 +135,9 @@ def start_server(port, use_caption=True):
         server.shutdown()
         sys.exit(0)
 
-    signal.signal(signal.SIGTERM, cleanup)
     signal.signal(signal.SIGINT, cleanup)
+    if sys.platform != "win32":
+        signal.signal(signal.SIGTERM, cleanup)
 
     print(f"Serving on http://127.0.0.1:{port}", flush=True)
     server.serve_forever()
@@ -193,7 +194,10 @@ def main():
         if pid:
             if sys.platform == "win32":
                 import subprocess as sp
-                sp.run(["taskkill", "/PID", str(pid), "/F"], capture_output=True)
+                sp.run(["taskkill", "/PID", str(pid)], capture_output=True)
+                time.sleep(2)
+                if _pid_alive(pid):
+                    sp.run(["taskkill", "/PID", str(pid), "/F"], capture_output=True)
             else:
                 os.kill(pid, signal.SIGTERM)
             print(f"Stopped (PID {pid})")
@@ -222,7 +226,7 @@ def main():
                     cmd.append("--no-caption")
                 log_fd = open(LOG_PATH, "a")
                 proc = sp.Popen(
-                    cmd, stdout=log_fd, stderr=log_fd,
+                    cmd, stdin=sp.DEVNULL, stdout=log_fd, stderr=log_fd,
                     creationflags=sp.DETACHED_PROCESS | sp.CREATE_NEW_PROCESS_GROUP,
                 )
                 log_fd.close()
@@ -237,6 +241,7 @@ def main():
                     os.dup2(log_fd.fileno(), sys.stderr.fileno())
                     log_fd.close()
                     start_server(args.port, use_caption=not args.no_caption)
+                    return 0  # defensive: start_server never returns, but guard against fall-through
 
             print(f"Starting som-server (PID {child_pid})...")
             for _ in range(10):

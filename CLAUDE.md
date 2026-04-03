@@ -37,7 +37,7 @@ som-annotate → som-find 找目标 → som-click/som-type 操作 → som-annota
 **绝对规则：**
 1. **每次操作后必须重新 `som-annotate`** — 元素编号在任何页面变化后全部失效
 2. **搜索用 URL 导航，不要操作搜索框** — 搜索框可能拦截模拟键盘输入
-3. **文字输入用剪贴板** — `echo -n "text" | xclip -selection clipboard && xdotool key ctrl+v`
+3. **文字输入用 som-type** — 或剪贴板 `pyperclip` + 粘贴
 
 ## 导航方法
 
