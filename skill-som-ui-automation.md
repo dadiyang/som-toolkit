@@ -52,11 +52,13 @@ JSON 结构示例：
 som-click 42                    # 单击编号 42
 som-click 42 --double           # 双击
 som-click 42 --right            # 右键
-som-click 42 -m cmd             # Cmd+Click（新标签打开链接）
+som-click 42 -m cmd             # 新标签打开链接（macOS→Cmd, Windows/Linux→Ctrl）
 som-click 42 -m shift           # Shift+Click
 som-click 42 -m cmd,shift       # 多修饰键组合
 som-click --xy 500,300          # 直接坐标点击（调试用）
 ```
+
+> 修饰键跨平台映射：`cmd` 在 macOS 上是 Command，在 Windows/Linux 上自动映射为 Ctrl。
 
 ### som-find：按条件搜索元素（弱多模态 agent 专用）
 

@@ -5,9 +5,9 @@ som-click: 根据 SoM 编号点击元素
     som-click 42                          # 点击编号 42 的元素
     som-click 42 --json som_elements.json # 指定元素文件
     som-click --xy 500,300                # 直接点击坐标
-    som-click 42 --modifier cmd           # Cmd+Click（新标签打开链接）
+    som-click 42 --modifier cmd           # 新标签打开链接（macOS→Cmd, Win/Linux→Ctrl）
     som-click 42 --modifier shift         # Shift+Click
-    som-click 42 --modifier cmd,shift     # Cmd+Shift+Click
+    som-click 42 --modifier cmd,shift     # 多修饰键组合
 """
 import argparse
 import os

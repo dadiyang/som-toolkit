@@ -4,7 +4,7 @@
 
 ## 你的工具
 
-工具在 `som-toolkit/` 目录，用 `python3 som-toolkit/<tool>` 调用。**所有涉及屏幕的命令必须加 `DISPLAY=:10.0`**（Linux）或确保有 GUI 环境（macOS）。
+工具在 `som-toolkit/` 目录，用 `python3 som-toolkit/<tool>` 调用。Linux 需设置 `DISPLAY=:10.0`，三平台（macOS/Linux/Windows）通过 pyautogui 统一。
 
 | 工具 | 作用 | 示例 |
 |------|------|------|
@@ -59,8 +59,7 @@ sleep 5  # 等待页面加载
 
 ```bash
 # 方法 1：Cmd/Ctrl+Click 强制新标签打开（推荐）
-som-click 42 -m cmd -j page.json   # macOS: Cmd+Click
-som-click 42 -m ctrl -j page.json  # Linux: Ctrl+Click
+som-click 42 -m cmd -j page.json   # 三平台通用：macOS 自动映射 Cmd，Windows/Linux 自动映射 Ctrl
 som-tab next                        # 切到新标签
 sleep 3
 som-annotate -o product.png -j product.json -q --wait 2
@@ -73,6 +72,7 @@ som-annotate -o product.png -j product.json -q --wait 2
 ```
 
 修饰键参数 `--modifier` / `-m` 支持：`cmd`, `shift`, `alt`, `ctrl`，可逗号组合（如 `-m cmd,shift`）。
+跨平台映射：`cmd` 在 macOS 上是 Command 键，在 Windows/Linux 上自动映射为 Ctrl 键（浏览器快捷键约定）。
 
 ## 迷失恢复（最重要的规则）
 
