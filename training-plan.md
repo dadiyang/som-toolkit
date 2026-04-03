@@ -83,8 +83,8 @@ DISPLAY=:10.0 PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK=True CUDA_VISIBLE_DEVICES=""
 请执行以下操作：
 1. 在浏览器中打开 eBay 搜索 "wireless earbuds"
    方法：先设置剪贴板，再用快捷键导航
-   echo -n "https://www.ebay.com/sch/i.html?_nkw=wireless+earbuds" | xclip -selection clipboard
-   DISPLAY=:10.0 xdotool key ctrl+l && sleep 0.3 && DISPLAY=:10.0 xdotool key ctrl+v && sleep 0.3 && DISPLAY=:10.0 xdotool key Return
+   python3 -c "import pyperclip; pyperclip.copy('https://www.ebay.com/sch/i.html?_nkw=wireless+earbuds')"
+   som-type --key ctrl+l && sleep 0.3 && som-type --key ctrl+v && sleep 0.3 && som-type --key Return
 2. 等待 8 秒
 3. 执行 som-annotate 标注当前页面
 4. 用 som-find --summary 看到了什么
@@ -95,7 +95,7 @@ DISPLAY=:10.0 PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK=True CUDA_VISIBLE_DEVICES=""
 基于上一步的标注结果：
 1. 用 som-find 找到第一个商品标题（搜索 "earbuds" 相关内容）
 2. 用 som-click 点击它
-3. 【重要】电商网站商品会在新标签打开！执行：DISPLAY=:10.0 xdotool key ctrl+Tab
+3. 【重要】电商网站商品会在新标签打开！执行：som-tab next
 4. 等 3 秒后重新 som-annotate
 5. 用 som-find --extract 提取价格信息
 ```

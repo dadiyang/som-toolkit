@@ -177,7 +177,7 @@ som-server start --port 8766    # 指定端口（默认 8765）
 - SoM 只能检测**当前视口内**的元素，滚动出去的看不到
 - 价格在页面上方、运费在页面中下方 → 需要分别滚动后标注提取
 - **完整信息提取流程**：页面顶部 `som-annotate`（提取价格/SKU）→ `Page_Down` → 再次 `som-annotate`（提取运费/退货）
-- 滚动命令：`xdotool key Page_Down` / `xdotool key Page_Up` / `xdotool key Home` / `xdotool key End`
+- 滚动命令：`som-scroll down` / `som-scroll up` / `som-scroll top` / `som-scroll bottom`
 
 ### 弱多模态 agent 操作模式
 
@@ -191,9 +191,9 @@ som-annotate → som-find --summary → 理解页面状态
 
 **示例：完整购物流程（弱 agent 版）**
 ```bash
-# 1. 搜索
-echo -n "https://www.ebay.com/sch/i.html?_nkw=phone+case" | xclip -selection clipboard
-xdotool key ctrl+l && sleep 0.3 && xdotool key ctrl+v && sleep 0.3 && xdotool key Return
+# 1. 搜索（跨平台 URL 导航）
+python3 -c "import pyperclip; pyperclip.copy('https://www.ebay.com/sch/i.html?_nkw=phone+case')"
+som-type --key ctrl+l && sleep 0.3 && som-type --key ctrl+v && sleep 0.3 && som-type --key Return
 
 # 2. 找第一个商品
 som-annotate -j e.json
@@ -218,29 +218,24 @@ som-click 29 -j e.json
 - 实测在 2880x1800 分辨率下，点击误差 < 5 像素
 - 验证通过：Chrome 标签切换、地址栏点击、页面按钮、搜索结果链接
 
-### 文字输入（重要陷阱）
+### 文字输入
 
-**`xdotool type` 不可靠**，以下场景会失败：
-1. Chrome 地址栏：选中状态在 type 开始时被取消，文字被追加而非替换
-2. 某些网站输入框（如百度搜索框）：过滤模拟键盘事件，xdotool type 完全无效
+统一使用 `som-type`，内部通过 pyperclip 剪贴板 + pyautogui 粘贴实现，三平台通用：
 
-**可靠方案**：
-- 输入 ASCII 文字：`echo -n "text" | xclip -selection clipboard && xdotool key ctrl+v`
-- 输入中文/Unicode：同上（xclip 支持 UTF-8）
-- macOS：`osascript -e 'tell application "System Events" to keystroke "text"'`
-
-**地址栏操作最佳实践**：
 ```bash
-# 1. 设置剪贴板
-echo -n "https://example.com" | xclip -selection clipboard
-# 2. 聚焦并全选地址栏
-xdotool key ctrl+l
+som-type 42 "hello world" -j page.json     # 点击元素后输入
+som-type 42 "new text" --clear -j page.json # 先全选清空再输入
+som-type --key Return                       # 按回车
+```
+
+**地址栏导航最佳实践**：
+```bash
+python3 -c "import pyperclip; pyperclip.copy('https://example.com')"
+som-type --key ctrl+l   # 聚焦地址栏（macOS: som-type --key cmd+l）
 sleep 0.3
-# 3. 粘贴（自动替换选中内容）
-xdotool key ctrl+v
+som-type --key ctrl+v   # 粘贴
 sleep 0.3
-# 4. 回车导航
-xdotool key Return
+som-type --key Return   # 回车导航
 ```
 
 ### 搜索操作最佳实践
@@ -274,10 +269,10 @@ source venv/bin/activate
 
 依赖：
 - Python 3.10+
-- PyTorch（自动选择 CUDA/MPS/CPU）
+- PyTorch（CPU 模式，MPS 已禁用）
 - OmniParser V2 模型权重（~1GB，自动从 HuggingFace 下载）
-- Linux：xdotool + scrot
-- macOS：screencapture（内置）+ osascript（内置）
+- pyautogui + pyperclip（三平台 UI 操控）
+- Linux 额外需要：xdotool + scrot（pyautogui 后端）
 
 ## 电商网站操作实战指南（eBay 实测验证通过）
 
@@ -407,8 +402,8 @@ som-tab next         # 彻底迷失...
 # ✅ 正确：每次操作新商品都用 URL 重新导航
 som-tab close        # 关闭当前商品标签
 # 不管现在在哪个标签，直接导航回搜索
-echo -n "https://www.ebay.com/sch/i.html?_nkw=keyword" | xclip -selection clipboard
-xdotool key ctrl+l && sleep 0.3 && xdotool key ctrl+v && sleep 0.3 && xdotool key Return
+python3 -c "import pyperclip; pyperclip.copy('https://www.ebay.com/sch/i.html?_nkw=keyword')"
+som-type --key ctrl+l && sleep 0.3 && som-type --key ctrl+v && sleep 0.3 && som-type --key Return
 ```
 
 ### 多商品对比流程

@@ -42,9 +42,13 @@ som-annotate → som-find 找目标 → som-click/som-type 操作 → som-annota
 ## 导航方法
 
 ```bash
-# 地址栏导航（最可靠）
-echo -n "https://www.ebay.com/sch/i.html?_nkw=关键词" | xclip -selection clipboard
-xdotool key ctrl+l && sleep 0.3 && xdotool key ctrl+v && sleep 0.3 && xdotool key Return
+# 地址栏导航（最可靠，跨平台）
+python3 -c "import pyperclip; pyperclip.copy('https://www.ebay.com/sch/i.html?_nkw=关键词')"
+som-type --key ctrl+l       # 聚焦地址栏（macOS 用 som-type --key cmd+l）
+sleep 0.3
+som-type --key ctrl+v       # 粘贴 URL（macOS 用 som-type --key cmd+v）
+sleep 0.3
+som-type --key Return       # 回车
 sleep 5  # 等待页面加载
 ```
 
@@ -85,8 +89,8 @@ som-tab next  # 还不是
 som-tab prev  # 迷失了...
 
 # ✅ 正确：直接 URL 导航到你要去的页面
-echo -n "https://目标URL" | xclip -selection clipboard
-xdotool key ctrl+l && sleep 0.3 && xdotool key ctrl+v && sleep 0.3 && xdotool key Return
+python3 -c "import pyperclip; pyperclip.copy('https://目标URL')"
+som-type --key ctrl+l && sleep 0.3 && som-type --key ctrl+v && sleep 0.3 && som-type --key Return
 ```
 
 ## 滚动技巧
